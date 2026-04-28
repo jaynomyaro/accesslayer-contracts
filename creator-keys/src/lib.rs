@@ -26,6 +26,8 @@ pub enum ContractError {
 }
 
 pub mod fee {
+    use crate::ContractError;
+
     use soroban_sdk::contracttype;
 
     /// Basis points per 100% (10000 = 100%).
