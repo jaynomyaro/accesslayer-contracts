@@ -17,7 +17,10 @@ fn test_buy_quote_deterministic_across_zero_supply_transition() {
     let buyer = Address::generate(&env);
 
     let q_before = client.get_buy_quote(&creator);
-    assert!(q_before.total_amount >= 0, "buy quote total must be bounded");
+    assert!(
+        q_before.total_amount >= 0,
+        "buy quote total must be bounded"
+    );
     client.buy_key(&creator, &buyer, &q_before.total_amount);
 
     // Transition back to zero supply.
@@ -41,5 +44,8 @@ fn test_sell_quote_zero_supply_boundary_is_rejected() {
     let holder = Address::generate(&env);
 
     let err = client.try_get_sell_quote(&creator, &holder);
-    assert!(err.is_err(), "zero-supply holder must not receive sell quote");
+    assert!(
+        err.is_err(),
+        "zero-supply holder must not receive sell quote"
+    );
 }
