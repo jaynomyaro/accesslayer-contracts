@@ -194,8 +194,10 @@ Returns the fee configuration view scoped to a creator.
 
 ### `get_creator_fee_bps(creator: Address) → Result<u32, ContractError>`
 
-Returns the creator-facing basis-point share for a registered creator.
+Returns the creator-facing share of the protocol fee in basis points.
 
+- Unit: basis points (1 bps = 1/10000). Example: `9000` = 90%.
+- Valid range: `0–10000`. When a fee config is stored, `creator_bps + protocol_bps == 10000` always holds.
 - Returns `Err(ContractError::NotRegistered)` for unregistered creators.
 - Returns `Err(ContractError::FeeConfigNotSet)` if no protocol fee config exists.
 
@@ -203,9 +205,22 @@ Returns the creator-facing basis-point share for a registered creator.
 
 ### `get_creator_treasury_share(creator: Address) → Result<u32, ContractError>`
 
-Alias for `get_creator_fee_bps`. Returns the creator-facing bps from the global fee config.
+Alias for `get_creator_fee_bps`. Returns the same creator-facing bps value from the global fee config.
 
+- Unit and range: identical to `get_creator_fee_bps` (basis points, `0–10000`).
 - Same error conditions as `get_creator_fee_bps`.
+
+---
+
+### `get_protocol_treasury_share_bps(env: Env) → Result<u32, ContractError>`
+
+Returns the protocol treasury share from the global fee configuration in basis points.
+
+- Unit: basis points (1 bps = 1/10000). Example: `500` = 5%.
+- Valid range: `0–5000`. The protocol share is capped at `PROTOCOL_BPS_MAX` (`5000`) by `set_fee_config`.
+- When a fee config is stored, `creator_bps + protocol_bps == 10000` always holds, so `protocol_bps` is at most half the total.
+- Returns `Err(ContractError::FeeConfigNotSet)` if no protocol fee config has been stored.
+- Does not require a creator argument — reads directly from the global protocol config.
 
 ---
 
