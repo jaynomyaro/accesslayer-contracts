@@ -99,7 +99,10 @@ fn test_get_creator_details_reflects_latest_state_after_buy_then_sell() {
         details_after_sell.supply, 0,
         "supply must return to 0 after sell; stale reads indicate a caching bug"
     );
-    assert!(details_after_sell.is_registered, "creator must remain registered after sell");
+    assert!(
+        details_after_sell.is_registered,
+        "creator must remain registered after sell"
+    );
     assert_eq!(details_after_sell.creator, creator);
     assert_eq!(details_after_sell.handle, String::from_str(&env, "bob"));
 }
