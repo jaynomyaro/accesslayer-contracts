@@ -33,6 +33,9 @@ pub mod fee {
     /// Basis points per 100% (10000 = 100%).
     pub const BPS_MAX: u32 = 10_000;
 
+    /// Maximum safe amount to prevent overflow in fee calculations.
+    pub const MAX_SAFE_AMOUNT: i128 = i128::MAX / BPS_MAX as i128;
+
     /// Maximum protocol share when configuring fees via [`assert_valid_fee_bps`].
     ///
     /// Caps the on-chain configured protocol take at 50% so fee settings stay within
@@ -383,6 +386,7 @@ fn resolve_quote_inputs(env: &Env, creator: &Address) -> Result<Option<i128>, Co
 ///
 /// Zero-value quote requests are treated as no-op quotes and return `None`.
 /// Negative quote amounts are rejected consistently across buy and sell paths.
+/// Large amounts are clamped to prevent overflow in fee calculations.
 fn normalize_quote_amount(amount: i128) -> Result<Option<i128>, ContractError> {
     if amount < 0 {
         return Err(ContractError::NotPositiveAmount);
@@ -392,7 +396,7 @@ fn normalize_quote_amount(amount: i128) -> Result<Option<i128>, ContractError> {
         return Ok(None);
     }
 
-    Ok(Some(amount))
+    Ok(Some(amount.min(fee::MAX_SAFE_AMOUNT)))
 }
 
 fn zero_quote_response() -> QuoteResponse {
@@ -483,11 +487,10 @@ impl CreatorKeysContract {
         payment: i128,
     ) -> Result<u32, ContractError> {
         buyer.require_auth();
-
-        if payment <= 0 {
-            return Err(ContractError::NotPositiveAmount);
-        }
-
+        let payment = match normalize_quote_amount(payment) {
+            Ok(Some(p)) => p,
+            _ => return Err(ContractError::NotPositiveAmount),
+        };
         let price: i128 = env
             .storage()
             .persistent()
@@ -763,9 +766,10 @@ impl CreatorKeysContract {
 
     pub fn set_key_price(env: Env, admin: Address, price: i128) -> Result<(), ContractError> {
         admin.require_auth();
-        if price <= 0 {
-            return Err(ContractError::NotPositiveAmount);
-        }
+        let price = match normalize_quote_amount(price) {
+            Ok(Some(p)) => p,
+            _ => return Err(ContractError::NotPositiveAmount),
+        };
         if env
             .storage()
             .persistent()
@@ -1069,6 +1073,12 @@ mod tests {
             super::normalize_quote_amount(-1),
             Err(super::ContractError::NotPositiveAmount)
         );
+    }
+
+    #[test]
+    fn test_normalize_quote_amount_clamps_large_amount() {
+        let large = super::fee::MAX_SAFE_AMOUNT + 1;
+        assert_eq!(super::normalize_quote_amount(large), Ok(Some(super::fee::MAX_SAFE_AMOUNT)));
     }
 
     #[test]
