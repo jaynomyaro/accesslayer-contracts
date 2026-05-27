@@ -3,7 +3,7 @@
 use creator_keys::{events, CreatorKeysContract, CreatorKeysContractClient};
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, Env, IntoVal, String,
+    Address, Env, IntoVal, String, Symbol, Val, Vec,
 };
 
 fn setup(env: &Env) -> (CreatorKeysContractClient<'_>, Address) {
@@ -12,6 +12,19 @@ fn setup(env: &Env) -> (CreatorKeysContractClient<'_>, Address) {
     let admin = Address::generate(env);
     client.set_key_price(&admin, &100_i128);
     (client, admin)
+}
+
+fn assert_event_topic_matches(env: &Env, event: &(Address, Vec<Val>, Val), expected_topic: Symbol) {
+    let actual_topic: Symbol = event
+        .1
+        .get(events::TOPIC_EVENT_NAME_INDEX)
+        .expect("event topic should be present")
+        .into_val(env);
+
+    assert_eq!(
+        actual_topic, expected_topic,
+        "event topic should match expected contract identifier"
+    );
 }
 
 // ── Registration event tests ────────────────────────────────────────────
@@ -31,15 +44,10 @@ fn test_register_creator_emits_event() {
     assert!(!events.is_empty(), "should emit at least one event");
 
     let last = events.last().unwrap();
-    let (_, topics, _data) = last;
+    assert_event_topic_matches(&env, &last, events::REGISTER_EVENT_NAME);
 
-    let topic: soroban_sdk::Symbol = topics
-        .get(events::TOPIC_EVENT_NAME_INDEX)
-        .unwrap()
-        .into_val(&env);
-    assert_eq!(topic, events::REGISTER_EVENT_NAME);
-
-    let event_creator: Address = topics
+    let event_creator: Address = last
+        .1
         .get(events::TOPIC_CREATOR_INDEX)
         .unwrap()
         .into_val(&env);
@@ -91,6 +99,22 @@ fn test_register_creator_event_fires_once() {
     assert_eq!(after - before, 1, "register should emit exactly one event");
 }
 
+#[test]
+#[should_panic(expected = "event topic should match expected contract identifier")]
+fn test_assert_event_topic_matches_rejects_unexpected_identifier() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup(&env);
+
+    let creator = Address::generate(&env);
+    client.register_creator(&creator, &String::from_str(&env, "alice"));
+
+    let events = env.events().all();
+    let last = events.last().unwrap();
+
+    assert_event_topic_matches(&env, &last, events::BUY_EVENT_NAME);
+}
+
 // ── Buy event tests ─────────────────────────────────────────────────────
 
 #[test]
@@ -107,22 +131,17 @@ fn test_buy_key_emits_event_with_correct_topics() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    let (_, topics, _) = last;
+    assert_event_topic_matches(&env, &last, events::BUY_EVENT_NAME);
 
-    // Topics: (events::BUY_EVENT_NAME, creator, buyer)
-    let event_sym: soroban_sdk::Symbol = topics
-        .get(events::TOPIC_EVENT_NAME_INDEX)
-        .unwrap()
-        .into_val(&env);
-    assert_eq!(event_sym, events::BUY_EVENT_NAME);
-
-    let event_creator: Address = topics
+    let event_creator: Address = last
+        .1
         .get(events::TOPIC_CREATOR_INDEX)
         .unwrap()
         .into_val(&env);
     assert_eq!(event_creator, creator);
 
-    let event_buyer: Address = topics
+    let event_buyer: Address = last
+        .1
         .get(events::TOPIC_BUYER_INDEX)
         .unwrap()
         .into_val(&env);
