@@ -9,7 +9,7 @@
 mod contract_test_env;
 
 use contract_test_env::{register_creator_keys, set_key_price_for_tests, test_env_with_auths};
-use creator_keys::{constants, ContractError, CreatorKeysContractClient, CreatorProfile};
+use creator_keys::{constants, ContractError, CreatorProfile};
 use soroban_sdk::{testutils::Address as _, Address, String};
 
 #[test]
