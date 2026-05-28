@@ -90,10 +90,7 @@ fn test_buy_execution_fee_matches_quote_after_fee_config_update() {
         protocol_fee, 125,
         "protocol fee should match updated 25% bps"
     );
-    assert_eq!(
-        creator_fee, 375,
-        "creator fee should match updated 75% bps"
-    );
+    assert_eq!(creator_fee, 375, "creator fee should match updated 75% bps");
     assert_eq!(
         quote.protocol_fee, protocol_fee,
         "execution fee matches quote fee after fee config update"
