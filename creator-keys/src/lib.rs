@@ -467,9 +467,10 @@ fn credit_protocol_fee_recipient_balance(env: &Env, amount: i128) -> Result<(), 
     let updated = read_protocol_fee_recipient_balance(env)
         .checked_add(amount)
         .ok_or(ContractError::Overflow)?;
-    env.storage()
-        .persistent()
-        .set(&constants::storage::PROTOCOL_FEE_RECIPIENT_BALANCE, &updated);
+    env.storage().persistent().set(
+        &constants::storage::PROTOCOL_FEE_RECIPIENT_BALANCE,
+        &updated,
+    );
     Ok(())
 }
 
