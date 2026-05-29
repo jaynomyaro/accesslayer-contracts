@@ -49,7 +49,10 @@ fn test_buy_event_buyer_address_matches_caller() {
         .get(events::TOPIC_BUYER_INDEX)
         .expect("buyer address field should be present in event")
         .into_val(&env);
-    assert_eq!(event_buyer, buyer, "buyer address in event must match the caller");
+    assert_eq!(
+        event_buyer, buyer,
+        "buyer address in event must match the caller"
+    );
 
     // Verify creator address field is present and correct
     let event_creator: Address = topics
