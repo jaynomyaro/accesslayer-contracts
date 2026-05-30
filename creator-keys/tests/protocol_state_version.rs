@@ -74,7 +74,7 @@ fn test_protocol_state_version_monotonically_increasing() {
         client.set_fee_config(&admin, &creator_bps, &protocol_bps);
 
         let current_version = client.get_protocol_state_version();
-        assert_eq!(current_version, i as u32);
+        assert_eq!(current_version, i);
         assert!(current_version > previous_version);
         previous_version = current_version;
     }
