@@ -305,10 +305,7 @@ fn test_buy_key_event_payload_fields_are_validated_from_fixture() {
     assert_eq!(topics.creator, fixture.creator);
     assert_eq!(topics.actor, buyer);
 
-    let expected = BuyEventPayloadBuilder::new()
-        .supply(1)
-        .payment(150)
-        .build();
+    let expected = BuyEventPayloadBuilder::new().supply(1).payment(150).build();
 
     assert_eq!(payload.supply, expected.0);
     assert_eq!(payload.payment, expected.1);
