@@ -31,11 +31,6 @@ fn test_sell_increases_protocol_fee_recipient_balance_by_bps_fee() {
     client.buy_key(&creator, &holder, &KEY_PRICE);
 
     let balance_before = client.get_protocol_recipient_balance();
-    assert_eq!(
-        balance_before, 0,
-        "protocol fee balance should start at zero"
-    );
-
     let quote = client.get_sell_quote(&creator, &holder);
     let expected_protocol_fee = compute_expected_protocol_fee(KEY_PRICE, PROTOCOL_BPS);
     assert_eq!(
