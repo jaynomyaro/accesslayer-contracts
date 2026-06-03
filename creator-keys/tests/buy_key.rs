@@ -4,8 +4,7 @@ mod contract_test_env;
 
 use contract_test_env::{
     compute_expected_buy_price, register_creator_keys, register_test_creator,
-    set_key_price_for_tests, set_protocol_fee_bps,
-    test_env_with_auths,
+    set_key_price_for_tests, set_protocol_fee_bps, test_env_with_auths,
 };
 use creator_keys::ContractError;
 use soroban_sdk::{testutils::Address as _, Address};
