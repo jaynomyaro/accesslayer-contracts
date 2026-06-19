@@ -884,8 +884,7 @@ impl CreatorKeysContract {
         env.storage()
             .persistent()
             .set(&constants::storage::PAUSED, &true);
-        env.events()
-            .publish((events::PAUSE_EVENT_NAME, admin), ());
+        env.events().publish((events::PAUSE_EVENT_NAME, admin), ());
         Ok(())
     }
 
