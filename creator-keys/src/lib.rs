@@ -253,6 +253,19 @@ pub mod constants {
         pub const NAME: &str = "get_key_name";
         pub const SYMBOL: &str = "get_key_symbol";
     }
+
+    /// Default values for fee bounds used across validation paths and test fixtures.
+    ///
+    /// These constants represent the canonical starting point for a fee configuration.
+    /// Keeping them here ensures a single source of truth: any adjustment to the
+    /// default split only needs to happen in one place.
+    pub mod fee_bounds {
+        /// Default creator share in basis points (90%).
+        pub const DEFAULT_CREATOR_BPS: u32 = 9_000;
+
+        /// Default protocol share in basis points (10%).
+        pub const DEFAULT_PROTOCOL_BPS: u32 = 1_000;
+    }
 }
 
 /// Stable, non-optional view of the protocol fee configuration.
