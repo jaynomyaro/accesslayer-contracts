@@ -70,6 +70,13 @@ pub const SELL_EVENT_DATA_FIELDS: [&str; 1] = ["supply"];
 /// Number of fields in the sell event data payload.
 pub const SELL_EVENT_FIELD_COUNT: usize = SELL_EVENT_DATA_FIELDS.len();
 
+/// Stable field order for buyback event payloads.
+pub const BUYBACK_EVENT_DATA_FIELDS: [&str; 5] =
+    ["creator", "amount", "price_paid", "new_supply", "ledger"];
+
+/// Number of fields in the buyback event data payload.
+pub const BUYBACK_EVENT_FIELD_COUNT: usize = BUYBACK_EVENT_DATA_FIELDS.len();
+
 /// Stable registration event payload for downstream indexers.
 ///
 /// Event shape:
@@ -94,9 +101,29 @@ pub fn register_event_topics(creator: &Address) -> (Symbol, Address) {
     (REGISTER_EVENT_NAME, creator.clone())
 }
 
+/// Stable buyback event payload for downstream indexers.
+///
+/// Event shape:
+/// - topics: `(BUYBACK_EVENT_NAME, creator)`
+/// - data: `KeysBoughtBackEvent`
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct KeysBoughtBackEvent {
+    pub creator: Address,
+    pub amount: u32,
+    pub price_paid: i128,
+    pub new_supply: u32,
+    pub ledger: u32,
+}
+
 /// Shared buy event topics tuple.
 pub fn buy_event_topics(creator: &Address, buyer: &Address) -> (Symbol, Address, Address) {
     (BUY_EVENT_NAME, creator.clone(), buyer.clone())
+}
+
+/// Shared buyback event topics tuple.
+pub fn buyback_event_topics(creator: &Address) -> (Symbol, Address) {
+    (BUYBACK_EVENT_NAME, creator.clone())
 }
 
 /// Event name for dividend distribution.
@@ -104,6 +131,18 @@ pub const DIVIDEND_DISTRIBUTED_EVENT_NAME: Symbol = symbol_short!("div_dist");
 
 /// Event name for dividend claim.
 pub const DIVIDEND_CLAIMED_EVENT_NAME: Symbol = symbol_short!("div_claim");
+
+/// Event name for allocation locked.
+pub const ALLOCATION_LOCKED_EVENT_NAME: Symbol = symbol_short!("alloc_lck");
+
+/// Event name for allocation claimed.
+pub const ALLOCATION_CLAIMED_EVENT_NAME: Symbol = symbol_short!("alloc_clm");
+
+/// Event name for protocol fee recipient updated.
+pub const PROTOCOL_FEE_RECIPIENT_UPDATED_EVENT_NAME: Symbol = symbol_short!("p_fee_upd");
+
+/// Event name for creator fee recipient updated.
+pub const CREATOR_FEE_RECIPIENT_UPDATED_EVENT_NAME: Symbol = symbol_short!("c_fee_upd");
 
 /// Stable field order for dividend distributed event payloads.
 pub const DIVIDEND_DISTRIBUTED_DATA_FIELDS: [&str; 4] =
@@ -142,4 +181,35 @@ pub fn dividend_claimed_topics(
         creator.clone(),
         claimant.clone(),
     )
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct AllocationLockedEvent {
+    pub creator_id: Address,
+    pub amount: u32,
+    pub unlock_ledger: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct AllocationClaimedEvent {
+    pub creator_id: Address,
+    pub amount: u32,
+    pub ledger: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct ProtocolFeeRecipientUpdatedEvent {
+    pub old_recipient: Address,
+    pub new_recipient: Address,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct CreatorFeeRecipientUpdatedEvent {
+    pub creator_id: Address,
+    pub old_recipient: Address,
+    pub new_recipient: Address,
 }

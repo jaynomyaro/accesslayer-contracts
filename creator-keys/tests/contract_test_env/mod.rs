@@ -94,7 +94,7 @@ pub fn register_test_creator(
     handle: &str,
 ) -> Address {
     let creator = Address::generate(env);
-    client.register_creator(&creator, &String::from_str(env, handle));
+    client.register_creator(&creator, &String::from_str(env, handle), &None, &None);
     creator
 }
 
@@ -119,7 +119,7 @@ pub fn register_test_creator_with_fee_config(
     let admin = Address::generate(env);
     client.set_fee_config(&admin, &creator_bps, &protocol_bps);
     let creator = Address::generate(env);
-    client.register_creator(&creator, &String::from_str(env, handle));
+    client.register_creator(&creator, &String::from_str(env, handle), &None, &None);
     creator
 }
 
@@ -220,6 +220,24 @@ pub fn compute_expected_sell_price(_supply: u32, base_price: i128) -> i128 {
     base_price
 }
 
+/// Sets the bonding curve slope parameter via an auto-generated admin address.
+pub fn set_curve_slope(env: &Env, client: &CreatorKeysContractClient<'_>, slope: i128) -> Address {
+    let admin = Address::generate(env);
+    client.set_curve_slope(&admin, &slope);
+    admin
+}
+
+/// Computes the expected bonding-curve-adjusted price for a given supply.
+///
+/// Formula: `price = base_price + slope * supply`
+/// When slope is 0, this returns `base_price` (flat curve).
+pub fn compute_expected_bonding_curve_price(slope: i128, base_price: i128, supply: u32) -> i128 {
+    if slope == 0 {
+        return base_price;
+    }
+    base_price + slope * supply as i128
+}
+
 /// Computes the expected protocol fee from a given price and bps value.
 ///
 /// This helper makes fixture intent explicit and keeps tests aligned
@@ -266,6 +284,29 @@ pub fn compute_expected_balance_after_trades(
         }
     }
     balance as u32
+}
+
+/// Computes the proportional dividend share for a single holder.
+///
+/// This is the canonical helper for the `holder_balance / total_supply * net_amount`
+/// calculation. It returns the integer floor share for one holder and can be used in
+/// isolation to verify the math without deploying the full contract.
+///
+/// - `net_amount`: gross distribution amount after protocol fee has been deducted.
+/// - `holder_balance`: number of keys held by the holder.
+/// - `total_supply`: total keys in circulation at distribution time.
+///
+/// Returns `0` when `total_supply` is zero or `holder_balance` is zero.
+pub fn proportional_dividend_share(
+    net_amount: i128,
+    holder_balance: u32,
+    total_supply: u32,
+) -> i128 {
+    if total_supply == 0 || holder_balance == 0 {
+        return 0;
+    }
+    let per_key = net_amount / total_supply as i128;
+    per_key * holder_balance as i128
 }
 
 /// Distributes a dividend from `distributor` to holders of `creator`'s keys.
