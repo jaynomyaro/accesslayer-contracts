@@ -930,10 +930,8 @@ impl CreatorKeysContract {
         env.storage().persistent().set(&from_key, &new_from_balance);
         env.storage().persistent().set(&to_key, &new_to_balance);
 
-        env.events().publish(
-            (events::TRANSFER_EVENT_NAME, creator, from, to),
-            amount,
-        );
+        env.events()
+            .publish((events::TRANSFER_EVENT_NAME, creator, from, to), amount);
 
         Ok(())
     }
