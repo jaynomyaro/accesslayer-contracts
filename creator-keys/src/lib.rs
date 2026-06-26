@@ -1235,19 +1235,19 @@ impl CreatorKeysContract {
     /// Transfers creator keys between two wallets without changing total supply.
     pub fn transfer_keys(
         env: Env,
+        creator: Address,
         from: Address,
         to: Address,
-        creator: Address,
         amount: u32,
     ) -> Result<(), ContractError> {
         from.require_auth();
         assert_not_paused(&env)?;
 
         if amount == 0 {
-            return Err(ContractError::NotPositiveAmount);
+            return Err(ContractError::ZeroTransferAmount);
         }
         if from == to {
-            return Err(ContractError::ZeroAddress);
+            return Err(ContractError::SelfTransfer);
         }
 
         let mut profile = read_registered_creator_profile(&env, &creator)?;
