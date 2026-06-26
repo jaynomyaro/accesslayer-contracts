@@ -1264,3 +1264,374 @@ fn assert_no_events(env: &Env) {
         all_events
     );
 }
+
+// --- Checked-Addition Helper Tests (#216) ---
+
+#[test]
+fn test_checked_accumulate_normal_addition() {
+    // Verify that normal accumulations work correctly
+    let result = fee::checked_accumulate(100, 50);
+    assert_eq!(result, Ok(150), "normal accumulation should succeed");
+}
+
+#[test]
+fn test_checked_accumulate_with_negative_delta() {
+    // Verify that negative deltas (e.g., correction) are handled correctly
+    let result = fee::checked_accumulate(100, -30);
+    assert_eq!(
+        result,
+        Ok(70),
+        "accumulation with negative delta should work"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_zero_delta() {
+    // Verify that adding zero is a no-op
+    let result = fee::checked_accumulate(500, 0);
+    assert_eq!(result, Ok(500), "adding zero should return same value");
+}
+
+#[test]
+fn test_checked_accumulate_zero_to_positive() {
+    // Verify that starting from zero works
+    let result = fee::checked_accumulate(0, 123);
+    assert_eq!(result, Ok(123), "accumulating into zero should work");
+}
+
+#[test]
+fn test_checked_accumulate_large_values() {
+    // Verify that large but valid values accumulate correctly
+    let large_current = 1_000_000_000_000i128;
+    let large_delta = 500_000_000_000i128;
+    let result = fee::checked_accumulate(large_current, large_delta);
+    assert_eq!(
+        result,
+        Ok(1_500_000_000_000),
+        "large value accumulation should work"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_detects_positive_overflow() {
+    // Verify that overflow is detected when adding towards i128::MAX
+    let near_max = i128::MAX - 100;
+    let result = fee::checked_accumulate(near_max, 200);
+    assert_eq!(
+        result,
+        Err(ContractError::Overflow),
+        "should detect overflow"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_detects_negative_overflow() {
+    // Verify that underflow is detected when subtracting below i128::MIN
+    let near_min = i128::MIN + 100;
+    let result = fee::checked_accumulate(near_min, -200);
+    assert_eq!(
+        result,
+        Err(ContractError::Overflow),
+        "should detect underflow"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_boundary_max_add_zero() {
+    // Edge case: adding zero at MAX value should succeed
+    let result = fee::checked_accumulate(i128::MAX, 0);
+    assert_eq!(
+        result,
+        Ok(i128::MAX),
+        "MAX + 0 should succeed and return MAX"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_boundary_max_add_one() {
+    // Edge case: adding one to MAX should overflow
+    let result = fee::checked_accumulate(i128::MAX, 1);
+    assert_eq!(
+        result,
+        Err(ContractError::Overflow),
+        "MAX + 1 should overflow"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_boundary_min_subtract_one() {
+    // Edge case: subtracting one from MIN should underflow
+    let result = fee::checked_accumulate(i128::MIN, -1);
+    assert_eq!(
+        result,
+        Err(ContractError::Overflow),
+        "MIN - 1 should underflow"
+    );
+}
+
+#[test]
+fn test_checked_accumulate_dividend_distribution_scenario() {
+    // Simulate a realistic dividend distribution scenario with multiple accumulations
+    let mut accumulator = 0i128;
+
+    // Simulate several dividend distributions
+    let distributions = [100i128, 250, -50, 300];
+
+    for dist in distributions {
+        accumulator = fee::checked_accumulate(accumulator, dist).expect("distribution failed");
+    }
+
+    // Total should be 100 + 250 - 50 + 300 = 600
+    assert_eq!(
+        accumulator, 600,
+        "accumulated dividend should match sum of distributions"
+    );
+}
+
+// --- Fee Accounting Balance-Conservation Tests (#144) ---
+
+#[test]
+fn test_fee_split_conservation_90_10_split() {
+    // Verify that a 90% creator / 10% protocol split conserves all value
+    let total = 1000i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 9000, 1000);
+
+    // Assertion 1: Both fees are non-negative
+    assert!(creator_fee >= 0, "creator_fee must be non-negative");
+    assert!(protocol_fee >= 0, "protocol_fee must be non-negative");
+
+    // Assertion 2: Fees sum exactly to the total (no value lost or created)
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "creator_fee ({}) + protocol_fee ({}) must equal total ({})",
+        creator_fee,
+        protocol_fee,
+        total
+    );
+
+    // Assertion 3: Creator gets ~90%, protocol gets ~10%
+    assert!(
+        creator_fee >= total * 9 / 10,
+        "creator_fee must be at least 90% of total"
+    );
+    assert!(
+        protocol_fee <= total / 10 + 1,
+        "protocol_fee must be at most 10% of total (plus rounding)"
+    );
+}
+
+#[test]
+fn test_fee_split_conservation_50_50_split() {
+    // Verify that a 50% / 50% split conserves all value
+    let total = 10000i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 5000, 5000);
+
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "50/50 split must conserve total value: {} + {} != {}",
+        creator_fee,
+        protocol_fee,
+        total
+    );
+
+    // Due to rounding, creator gets the remainder
+    assert!(creator_fee >= total / 2, "creator_fee must be at least 50%");
+    assert!(
+        protocol_fee <= total / 2,
+        "protocol_fee must be at most 50%"
+    );
+}
+
+#[test]
+fn test_fee_split_conservation_100_creator_zero_protocol() {
+    // Edge case: all fees go to creator, none to protocol
+    let total = 500i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 10000, 0);
+
+    assert_eq!(creator_fee, total, "creator must receive all value");
+    assert_eq!(protocol_fee, 0, "protocol must receive zero");
+    assert_eq!(creator_fee + protocol_fee, total, "total must be conserved");
+}
+
+#[test]
+fn test_fee_split_conservation_boundary_price_one() {
+    // Edge case: very low trade value (price = 1)
+    let total = 1i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 9000, 1000);
+
+    assert!(creator_fee >= 0, "creator_fee must be non-negative");
+    assert!(protocol_fee >= 0, "protocol_fee must be non-negative");
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "even at price=1, fees must sum to total: {} + {} != {}",
+        creator_fee,
+        protocol_fee,
+        total
+    );
+}
+
+#[test]
+fn test_fee_split_conservation_boundary_price_two() {
+    // Edge case: low trade value (price = 2)
+    let total = 2i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 9000, 1000);
+
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "at price=2, fees must sum to total"
+    );
+}
+
+#[test]
+fn test_fee_split_conservation_boundary_odd_price_999() {
+    // Edge case: odd total that creates rounding scenario
+    let total = 999i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 9000, 1000);
+
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "odd price 999 must still conserve all value: {} + {} != {}",
+        creator_fee,
+        protocol_fee,
+        total
+    );
+
+    // The remainder (from 999 * 1000 / 10000 = 99.9 -> 99) goes to creator
+    assert!(creator_fee > protocol_fee, "remainder should go to creator");
+}
+
+#[test]
+fn test_fee_split_conservation_large_amount() {
+    // Test with large amounts to ensure no overflow issues affect conservation
+    let total = 100_000_000_000i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(total, 8000, 2000);
+
+    assert_eq!(
+        creator_fee + protocol_fee,
+        total,
+        "large amount conservation check failed"
+    );
+
+    // Verify proportions are roughly correct
+    assert!(
+        creator_fee >= total * 4 / 5,
+        "creator should get ~80% of large amounts"
+    );
+    assert!(
+        protocol_fee <= total / 5 + 1,
+        "protocol should get ~20% of large amounts"
+    );
+}
+
+#[test]
+fn test_fee_split_conservation_deterministic_assertions() {
+    // Deterministic test: verify specific known conversions are conserved
+    let test_cases = [
+        (100, 9000, 1000),  // 90/10 split: 90 / 10
+        (1000, 5000, 5000), // 50/50 split: 500 / 500
+        (2000, 8000, 2000), // 80/20 split: 1600 / 400
+        (333, 7000, 3000),  // 70/30 split: ~233 / ~100
+    ];
+
+    for (total, creator_bps, protocol_bps) in test_cases {
+        let (creator_fee, protocol_fee) = fee::compute_fee_split(total, creator_bps, protocol_bps);
+        assert_eq!(
+            creator_fee + protocol_fee,
+            total,
+            "failed for total={}, creator_bps={}, protocol_bps={}",
+            total,
+            creator_bps,
+            protocol_bps
+        );
+    }
+}
+
+#[test]
+fn test_checked_fee_sum_conservation() {
+    // Verify that checked_fee_sum helper maintains value conservation
+    let creator_fee = 450i128;
+    let protocol_fee = 50i128;
+
+    let sum = fee::checked_fee_sum(creator_fee, protocol_fee);
+    assert_eq!(
+        sum,
+        Some(500),
+        "fee sum must equal creator_fee + protocol_fee"
+    );
+}
+
+#[test]
+fn test_checked_fee_sum_overflow_behavior() {
+    // Verify that overflow is detected (returns None) rather than wrapping
+    let creator_fee = i128::MAX;
+    let protocol_fee = 1i128;
+
+    let sum = fee::checked_fee_sum(creator_fee, protocol_fee);
+    assert_eq!(sum, None, "fee sum must detect overflow and return None");
+}
+
+#[test]
+fn test_fee_split_conservation_across_multiple_fee_configs() {
+    // Verify conservation property holds for multiple protocol fee configurations
+    let total = 5000i128;
+    let fee_configs = [
+        (10000, 0),   // 100% creator
+        (9500, 500),  // 95% creator, 5% protocol
+        (9000, 1000), // 90% creator, 10% protocol
+        (8200, 1800), // 82% creator, 18% protocol
+        (5000, 5000), // 50% creator, 50% protocol
+        (0, 10000),   // 100% protocol (edge case)
+    ];
+
+    for (creator_bps, protocol_bps) in fee_configs {
+        let (creator_fee, protocol_fee) = fee::compute_fee_split(total, creator_bps, protocol_bps);
+        assert_eq!(
+            creator_fee + protocol_fee,
+            total,
+            "conservation check failed for config ({}, {})",
+            creator_bps,
+            protocol_bps
+        );
+    }
+}
+
+#[test]
+fn test_fee_split_conservation_across_price_range() {
+    // Verify conservation for a range of prices to ensure no systematic drift
+    let prices = [1, 2, 10, 99, 100, 101, 500, 999, 1000, 10_000];
+
+    for price in prices {
+        let (creator_fee, protocol_fee) = fee::compute_fee_split(price, 9000, 1000);
+        assert_eq!(
+            creator_fee + protocol_fee,
+            price,
+            "conservation failed for price={}",
+            price
+        );
+    }
+}
+
+#[test]
+fn test_zero_net_boundary_seller_gets_zero_proceeds() {
+    // Edge case: when fees equal or exceed price, seller should get zero (not negative)
+    // This is a boundary condition that must be handled without allowing negative proceeds
+    let price = 10i128;
+    let (creator_fee, protocol_fee) = fee::compute_fee_split(price, 1000, 9000);
+
+    // Total fees
+    let total_fees = creator_fee + protocol_fee;
+    assert_eq!(total_fees, price, "fees must sum to price");
+
+    // Seller's net proceeds would be price - fees = 0
+    let net_proceeds = price - total_fees;
+    assert!(net_proceeds >= 0, "proceeds must not be negative");
+    assert_eq!(
+        net_proceeds, 0,
+        "with extreme split, proceeds should be zero"
+    );
+}

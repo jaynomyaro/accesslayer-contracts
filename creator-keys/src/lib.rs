@@ -207,6 +207,30 @@ pub mod fee {
     pub fn checked_fee_sum(creator_fee: i128, protocol_fee: i128) -> Option<i128> {
         creator_fee.checked_add(protocol_fee)
     }
+
+    /// Safely accumulates a value into an accumulator, returning an error on overflow.
+    ///
+    /// This helper is used in quote accumulator paths (e.g., dividend distribution) where
+    /// adding a per-key-net amount to the current accumulator must not overflow.
+    /// Unlike `checked_fee_sum` which returns `Option<T>`, this returns a `ContractError`
+    /// for use at call sites that need structured error handling.
+    ///
+    /// # Motivation
+    ///
+    /// Accumulator updates happen during dividend distribution and similar paths.
+    /// The pattern `accumulator.checked_add(delta).ok_or(ContractError::Overflow)?`
+    /// appears repeatedly. This helper centralizes the pattern and makes overflow
+    /// handling explicit.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let new_accum = fee::checked_accumulate(current_accumulator, per_key_net)?;
+    /// env.storage().persistent().set(&acc_key, &new_accum);
+    /// ```
+    pub fn checked_accumulate(current: i128, delta: i128) -> Result<i128, ContractError> {
+        current.checked_add(delta).ok_or(ContractError::Overflow)
+    }
 }
 
 pub mod constants {
@@ -1913,9 +1937,7 @@ impl CreatorKeysContract {
 
         let acc_key = constants::storage::dividend_accumulator(&creator);
         let accumulator: i128 = env.storage().persistent().get(&acc_key).unwrap_or(0);
-        let new_accumulator = accumulator
-            .checked_add(per_key_net)
-            .ok_or(ContractError::Overflow)?;
+        let new_accumulator = fee::checked_accumulate(accumulator, per_key_net)?;
         env.storage().persistent().set(&acc_key, &new_accumulator);
 
         env.events().publish(
