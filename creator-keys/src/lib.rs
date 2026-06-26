@@ -2241,7 +2241,7 @@ impl CreatorKeysContract {
             .persistent()
             .get(&constants::storage::max_supply(&creator))
     }
-
+}
 #[cfg(test)]
 mod tests {
     use super::fee;
