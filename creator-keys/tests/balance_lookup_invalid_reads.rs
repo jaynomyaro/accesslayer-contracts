@@ -5,7 +5,9 @@
 
 mod contract_test_env;
 
-use contract_test_env::{register_creator_keys, register_test_creator, set_pricing_and_fees, test_env_with_auths};
+use contract_test_env::{
+    register_creator_keys, register_test_creator, set_pricing_and_fees, test_env_with_auths,
+};
 use soroban_sdk::{testutils::Address as _, Env};
 
 // ── get_key_balance: unregistered creator ────────────────────────────────────
@@ -100,7 +102,10 @@ fn test_get_holder_key_count_holder_with_no_keys() {
 
     let view = client.get_holder_key_count(&creator, &holder);
     assert!(view.creator_exists, "creator_exists must be true");
-    assert_eq!(view.key_count, 0, "key_count must be zero for holder with no keys");
+    assert_eq!(
+        view.key_count, 0,
+        "key_count must be zero for holder with no keys"
+    );
 }
 
 // ── get_holder_key_count: correct count after buys ──────────────────────────

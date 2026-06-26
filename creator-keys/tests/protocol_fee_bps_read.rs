@@ -79,7 +79,12 @@ fn test_get_protocol_fee_bps_persists_across_operations() {
 
     let creator = soroban_sdk::Address::generate(&env);
     let buyer = soroban_sdk::Address::generate(&env);
-    client.register_creator(&creator, &soroban_sdk::String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator,
+        &soroban_sdk::String::from_str(&env, "alice"),
+        &None,
+        &None,
+    );
     client.set_key_price(&admin, &100);
     client.buy_key(&creator, &buyer, &100, &None);
 

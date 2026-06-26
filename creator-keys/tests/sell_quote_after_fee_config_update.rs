@@ -49,10 +49,7 @@ fn test_sell_quote_reflects_updated_fee_config() {
         quote_after.creator_fee, 800,
         "updated creator fee must be 80% of 1000"
     );
-    assert_eq!(
-        quote_after.price, 1000,
-        "price must remain unchanged"
-    );
+    assert_eq!(quote_after.price, 1000, "price must remain unchanged");
 }
 
 /// After a fee config update, the sell quote total_amount must be consistent
