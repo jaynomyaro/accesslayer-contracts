@@ -95,7 +95,10 @@ fn test_creator_can_claim_after_failed_non_creator_attempt() {
     let stored = client
         .get_locked_allocation(&creator)
         .expect("creator allocation must exist after claim");
-    assert!(stored.claimed, "allocation must be marked claimed after creator claims");
+    assert!(
+        stored.claimed,
+        "allocation must be marked claimed after creator claims"
+    );
 
     let balance = client.get_key_balance(&creator, &creator);
     assert_eq!(
