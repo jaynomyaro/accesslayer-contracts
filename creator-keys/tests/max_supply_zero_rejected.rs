@@ -22,12 +22,8 @@ fn test_max_supply_zero_reverts_at_registration() {
     let client = make_client(&env);
 
     let creator = Address::generate(&env);
-    let result = client.try_register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
-        &None,
-        &Some(0),
-    );
+    let result =
+        client.try_register_creator(&creator, &String::from_str(&env, "alice"), &None, &Some(0));
     assert_eq!(
         result,
         Err(Ok(ContractError::NotPositiveAmount)),
@@ -46,12 +42,8 @@ fn test_no_creator_state_written_after_zero_supply_cap_rejection() {
     let client = make_client(&env);
 
     let creator = Address::generate(&env);
-    let _ = client.try_register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
-        &None,
-        &Some(0),
-    );
+    let _ =
+        client.try_register_creator(&creator, &String::from_str(&env, "alice"), &None, &Some(0));
 
     // Creator must not appear as registered
     assert!(
@@ -78,12 +70,8 @@ fn test_max_supply_one_accepted_as_minimum() {
     let client = make_client(&env);
 
     let creator = Address::generate(&env);
-    let result = client.try_register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
-        &None,
-        &Some(1),
-    );
+    let result =
+        client.try_register_creator(&creator, &String::from_str(&env, "alice"), &None, &Some(1));
     assert!(
         result.is_ok(),
         "max_supply: Some(1) must be accepted as the minimum valid cap"
@@ -110,16 +98,9 @@ fn test_max_supply_none_accepted_no_cap() {
     let client = make_client(&env);
 
     let creator = Address::generate(&env);
-    let result = client.try_register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
-        &None,
-        &None,
-    );
-    assert!(
-        result.is_ok(),
-        "max_supply: None must be accepted (no cap)"
-    );
+    let result =
+        client.try_register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    assert!(result.is_ok(), "max_supply: None must be accepted (no cap)");
     assert!(client.is_creator_registered(&creator));
     assert_eq!(
         client.get_max_supply(&creator),
@@ -139,12 +120,8 @@ fn test_max_supply_two_accepted() {
     let client = make_client(&env);
 
     let creator = Address::generate(&env);
-    let result = client.try_register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
-        &None,
-        &Some(2),
-    );
+    let result =
+        client.try_register_creator(&creator, &String::from_str(&env, "alice"), &None, &Some(2));
     assert!(result.is_ok(), "max_supply: Some(2) must be accepted");
     assert_eq!(client.get_max_supply(&creator), Some(2));
 }
@@ -162,6 +139,9 @@ fn test_max_supply_large_value_accepted() {
         &None,
         &Some(1_000_000),
     );
-    assert!(result.is_ok(), "max_supply: Some(1_000_000) must be accepted");
+    assert!(
+        result.is_ok(),
+        "max_supply: Some(1_000_000) must be accepted"
+    );
     assert_eq!(client.get_max_supply(&creator), Some(1_000_000));
 }

@@ -76,7 +76,10 @@ fn test_buy_succeeds_immediately_after_unpause() {
     // Buy must succeed in the very next call after unpause
     let quote_after = client.get_buy_quote(&creator);
     let new_supply = client.buy_key(&creator, &buyer, &quote_after.total_amount, &None);
-    assert_eq!(new_supply, 2, "supply must be 2 after successful buy post-unpause");
+    assert_eq!(
+        new_supply, 2,
+        "supply must be 2 after successful buy post-unpause"
+    );
     assert_eq!(client.get_total_key_supply(&creator), 2);
     assert_eq!(client.get_key_balance(&creator, &buyer), 2);
 }
@@ -131,7 +134,10 @@ fn test_sell_succeeds_immediately_after_unpause() {
 
     // Sell must succeed in the very next call after unpause
     let new_supply = client.sell_key(&creator, &buyer, &None);
-    assert_eq!(new_supply, 1, "supply must be 1 after successful sell post-unpause");
+    assert_eq!(
+        new_supply, 1,
+        "supply must be 1 after successful sell post-unpause"
+    );
     assert_eq!(client.get_total_key_supply(&creator), 1);
     assert_eq!(client.get_key_balance(&creator, &buyer), 1);
 }
