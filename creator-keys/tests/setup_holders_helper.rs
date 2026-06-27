@@ -64,12 +64,7 @@ fn test_setup_holders_returns_correct_total_supply() {
     let wallet_a = soroban_sdk::Address::generate(&env);
     let wallet_b = soroban_sdk::Address::generate(&env);
 
-    let total_supply = setup_holders(
-        &env,
-        &client,
-        &creator,
-        &[(wallet_a, 4), (wallet_b, 2)],
-    );
+    let total_supply = setup_holders(&env, &client, &creator, &[(wallet_a, 4), (wallet_b, 2)]);
 
     assert_eq!(
         total_supply, 6,

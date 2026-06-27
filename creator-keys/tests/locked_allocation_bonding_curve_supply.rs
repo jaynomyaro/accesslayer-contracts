@@ -12,7 +12,10 @@ use contract_test_env::{
     set_pricing_and_fees, test_env_with_auths,
 };
 use creator_keys::LockedAllocation;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env, String,
+};
 
 const KEY_PRICE: i128 = 100;
 const CURVE_SLOPE: i128 = 10;
@@ -21,7 +24,13 @@ const UNLOCK_LEDGER: u32 = 100;
 const CREATOR_BPS: u32 = 9_000;
 const PROTOCOL_BPS: u32 = 1_000;
 
-fn setup(env: &Env) -> (creator_keys::CreatorKeysContractClient<'_>, Address, Address) {
+fn setup(
+    env: &Env,
+) -> (
+    creator_keys::CreatorKeysContractClient<'_>,
+    Address,
+    Address,
+) {
     let (client, _) = register_creator_keys(env);
     set_pricing_and_fees(env, &client, KEY_PRICE, CREATOR_BPS, PROTOCOL_BPS);
     set_curve_slope(env, &client, CURVE_SLOPE);

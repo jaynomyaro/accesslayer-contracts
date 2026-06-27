@@ -16,7 +16,14 @@ use soroban_sdk::{
     Address, Env, IntoVal,
 };
 
-fn setup_update(env: &Env) -> (creator_keys::CreatorKeysContractClient<'_>, Address, Address, Address) {
+fn setup_update(
+    env: &Env,
+) -> (
+    creator_keys::CreatorKeysContractClient<'_>,
+    Address,
+    Address,
+    Address,
+) {
     let (client, _) = register_creator_keys(env);
     let admin = Address::generate(env);
     let old_recipient = Address::generate(env);
@@ -79,8 +86,7 @@ fn test_protocol_fee_recipient_updated_event_emitted_once_per_update() {
         .count();
 
     assert_eq!(
-        update_event_count,
-        1,
+        update_event_count, 1,
         "update_protocol_fee_recipient must emit exactly one event per update call; \
          old_recipient={old_recipient:?}"
     );

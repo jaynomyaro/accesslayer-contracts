@@ -25,7 +25,10 @@ fn test_get_buyback_quote_returns_zero_for_zero_amount() {
 
     let result = client.get_buyback_quote(&creator, &0);
 
-    assert_eq!(result, 0, "get_buyback_quote with amount zero must return zero");
+    assert_eq!(
+        result, 0,
+        "get_buyback_quote with amount zero must return zero"
+    );
 }
 
 #[test]
