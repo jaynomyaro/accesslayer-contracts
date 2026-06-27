@@ -47,8 +47,7 @@ fn test_sum_claimable_never_exceeds_distributed_minus_protocol_fee() {
     let distributor = Address::generate(&env);
     distribute_test_dividend(&client, &creator, &distributor, distribution_amount);
 
-    let protocol_fee =
-        (distribution_amount * DEFAULT_PROTOCOL_BPS as i128) / 10_000;
+    let protocol_fee = (distribution_amount * DEFAULT_PROTOCOL_BPS as i128) / 10_000;
     let net_amount = distribution_amount - protocol_fee;
 
     let claimable_a = client.get_claimable_dividend(&creator, &holder_a);
@@ -104,8 +103,7 @@ fn test_rounding_dust_stays_within_contract() {
     let distributor = Address::generate(&env);
     distribute_test_dividend(&client, &creator, &distributor, distribution_amount);
 
-    let protocol_fee =
-        (distribution_amount * DEFAULT_PROTOCOL_BPS as i128) / 10_000;
+    let protocol_fee = (distribution_amount * DEFAULT_PROTOCOL_BPS as i128) / 10_000;
     let net_amount = distribution_amount - protocol_fee;
 
     let claimable_a = client.get_claimable_dividend(&creator, &holder_a);

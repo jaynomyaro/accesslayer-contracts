@@ -44,8 +44,12 @@ fn test_buy_reverts_when_max_price_is_one_stroop_below() {
     let quote = client.get_buy_quote(&creator);
 
     let before = capture_snapshot(&client, &creator, &buyer);
-    let result =
-        client.try_buy_key(&creator, &buyer, &quote.total_amount, &Some(quote.price - 1));
+    let result = client.try_buy_key(
+        &creator,
+        &buyer,
+        &quote.total_amount,
+        &Some(quote.price - 1),
+    );
     let after = capture_snapshot(&client, &creator, &buyer);
 
     assert_eq!(

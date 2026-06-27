@@ -49,11 +49,17 @@ fn test_get_locked_allocation_returns_some_when_set() {
     );
 
     let result = client.get_locked_allocation(&creator);
-    assert!(result.is_some(), "get_locked_allocation must return Some when locked allocation was set");
+    assert!(
+        result.is_some(),
+        "get_locked_allocation must return Some when locked allocation was set"
+    );
 
     let alloc = result.unwrap();
     assert_eq!(alloc.amount, amount, "locked amount must match");
-    assert_eq!(alloc.unlock_ledger, unlock_ledger, "unlock_ledger must match");
+    assert_eq!(
+        alloc.unlock_ledger, unlock_ledger,
+        "unlock_ledger must match"
+    );
     assert!(!alloc.claimed, "allocation must not be claimed initially");
 }
 
