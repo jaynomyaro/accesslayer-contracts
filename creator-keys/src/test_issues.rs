@@ -14,13 +14,11 @@
 #[cfg(test)]
 mod issue_tests {
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
-        token, Address, Env, Vec,
+        testutils::Address as _,
+        token, Address, Env, String, Vec,
     };
 
-    // Re-export the contract client and error type the same way the existing
-    // tests do.  Adjust the path if the crate structure differs.
-    use crate::{ContractError, CreatorKeysClient};
+    use crate::{ContractError, CreatorKeysContract, CreatorKeysContractClient};
 
     // -------------------------------------------------------------------------
     // Shared test helper – shared across all tests in this module
@@ -28,12 +26,21 @@ mod issue_tests {
 
     /// Register a creator with the given supply cap (pass `None` for no cap).
     /// Returns the creator id used in subsequent calls.
-    fn register_creator(env: &Env, client: &CreatorKeysClient, cap: Option<u32>) -> Address {
+    fn register_creator(
+        env: &Env,
+        client: &CreatorKeysContractClient,
+        cap: Option<u32>,
+    ) -> Address {
         let creator = Address::generate(env);
+        let handle = String::from_str(env, "alice");
         match cap {
-            Some(c) => client.register_creator_with_cap(&creator, &c),
-            None => client.register_creator(&creator),
-        };
+            Some(c) => {
+                client.register_creator(&creator, &handle, &None, &Some(c), &None);
+            }
+            None => {
+                client.register_creator(&creator, &handle, &None, &None, &None);
+            }
+        }
         creator
     }
 
@@ -57,16 +64,16 @@ mod issue_tests {
     /// * `creator_id` – The creator whose supply to verify.
     /// * `holders`    – Every address that holds (or may hold) keys for this creator.
     fn assert_supply_equals_holder_sum(
-        env: &Env,
-        client: &CreatorKeysClient,
+        _env: &Env,
+        client: &CreatorKeysContractClient,
         creator_id: &Address,
         holders: Vec<Address>,
     ) {
-        let total_supply: u32 = client.get_total_supply(creator_id);
+        let total_supply: u32 = client.get_total_key_supply(creator_id);
 
         let mut computed_sum: u32 = 0u32;
         for holder in holders.iter() {
-            let balance: u32 = client.get_balance(creator_id, &holder);
+            let balance: u32 = client.get_key_balance(creator_id, &holder);
             computed_sum = computed_sum
                 .checked_add(balance)
                 .expect("holder balance sum overflowed u32");
@@ -91,8 +98,8 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
 
         // Register a creator but do NOT buy any keys → total supply stays 0.
         let creator = register_creator(&env, &client, None);
@@ -115,8 +122,8 @@ mod issue_tests {
         // generic panic.  We check that it maps to a known ContractError.
         let err = result.unwrap_err().unwrap();
         assert!(
-            matches!(err, ContractError::ZeroTotalSupply),
-            "Expected ContractError::ZeroTotalSupply, got {err:?}"
+            matches!(err, ContractError::NoKeyHolders),
+            "Expected ContractError::NoKeyHolders, got {err:?}"
         );
 
         // Caller's XLM balance must be unchanged (no XLM was transferred).
@@ -153,8 +160,11 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_key_price(&admin, &100i128);
 
         let creator = register_creator(&env, &client, None);
 
@@ -166,11 +176,11 @@ mod issue_tests {
         fund_wallet(&env, &wallet_b, 100_000_000);
 
         // Wallet A buys 90 keys; wallet B buys 10 keys.
-        client.buy_keys(&creator, &wallet_a, &90u32);
-        client.buy_keys(&creator, &wallet_b, &10u32);
+        client.buy_key(&creator, &wallet_a, &90i128, &None);
+        client.buy_key(&creator, &wallet_b, &10i128, &None);
 
         // Verify total supply before distributing.
-        assert_eq!(client.get_total_supply(&creator), 100u32);
+        assert_eq!(client.get_total_key_supply(&creator), 100u32);
 
         // Use the #492 helper to confirm supply invariant holds after the buys.
         assert_supply_equals_holder_sum(
@@ -239,8 +249,11 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_key_price(&admin, &100i128);
 
         // Register creator with supply cap = 10.
         let creator = register_creator(&env, &client, Some(10u32));
@@ -249,9 +262,9 @@ mod issue_tests {
         fund_wallet(&env, &buyer, 100_000_000);
 
         // Buy 8 keys to bring supply to 8.
-        client.buy_keys(&creator, &buyer, &8u32);
+        client.buy_key(&creator, &buyer, &8i128, &None);
         assert_eq!(
-            client.get_total_supply(&creator),
+            client.get_total_key_supply(&creator),
             8u32,
             "Total supply should be 8 after buying 8 keys"
         );
@@ -265,7 +278,7 @@ mod issue_tests {
         );
 
         // Attempt to buy 3 more keys (would bring supply to 11 > cap 10).
-        let result = client.try_buy_keys(&creator, &buyer, &3u32);
+        let result = client.try_buy_key(&creator, &buyer, &3i128, &None);
         assert!(
             result.is_err(),
             "Buying 3 keys when only 2 slots remain should revert, but it succeeded"
@@ -280,7 +293,7 @@ mod issue_tests {
 
         // Total supply must still be 8 after the failed buy.
         assert_eq!(
-            client.get_total_supply(&creator),
+            client.get_total_key_supply(&creator),
             8u32,
             "Total supply should remain at 8 after a reverted buy"
         );
@@ -296,9 +309,9 @@ mod issue_tests {
         // A buy of exactly 2 (filling to the cap) must succeed.
         let buyer2 = Address::generate(&env);
         fund_wallet(&env, &buyer2, 100_000_000);
-        client.buy_keys(&creator, &buyer2, &2u32);
+        client.buy_key(&creator, &buyer2, &2i128, &None);
         assert_eq!(
-            client.get_total_supply(&creator),
+            client.get_total_key_supply(&creator),
             10u32,
             "Total supply should be 10 after filling to the cap"
         );
@@ -323,14 +336,17 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_key_price(&admin, &100i128);
 
         let creator = register_creator(&env, &client, None);
         let buyer = Address::generate(&env);
         fund_wallet(&env, &buyer, 100_000_000);
 
-        client.buy_keys(&creator, &buyer, &5u32);
+        client.buy_key(&creator, &buyer, &5i128, &None);
 
         assert_supply_equals_holder_sum(
             &env,
@@ -346,14 +362,17 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_key_price(&admin, &100i128);
 
         let creator = register_creator(&env, &client, None);
         let buyer = Address::generate(&env);
         fund_wallet(&env, &buyer, 100_000_000);
 
-        client.buy_keys(&creator, &buyer, &10u32);
+        client.buy_key(&creator, &buyer, &10i128, &None);
 
         // Verify invariant before sell.
         assert_supply_equals_holder_sum(
@@ -363,7 +382,7 @@ mod issue_tests {
             soroban_sdk::vec![&env, buyer.clone()],
         );
 
-        client.sell_keys(&creator, &buyer, &4u32);
+        client.sell_key(&creator, &buyer, &None);
 
         // Verify invariant after sell.
         assert_supply_equals_holder_sum(
@@ -374,7 +393,7 @@ mod issue_tests {
         );
 
         assert_eq!(
-            client.get_total_supply(&creator),
+            client.get_total_key_supply(&creator),
             6u32,
             "Total supply should be 6 after selling 4 of 10 keys"
         );
@@ -386,15 +405,18 @@ mod issue_tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, crate::CreatorKeys);
-        let client = CreatorKeysClient::new(&env, &contract_id);
+        let contract_id = env.register(CreatorKeysContract, ());
+        let client = CreatorKeysContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.set_key_price(&admin, &100i128);
 
         let creator = register_creator(&env, &client, None);
         let sender = Address::generate(&env);
         let receiver = Address::generate(&env);
         fund_wallet(&env, &sender, 100_000_000);
 
-        client.buy_keys(&creator, &sender, &8u32);
+        client.buy_key(&creator, &sender, &8i128, &None);
 
         // Verify invariant before transfer.
         assert_supply_equals_holder_sum(
@@ -415,8 +437,8 @@ mod issue_tests {
             soroban_sdk::vec![&env, sender.clone(), receiver.clone()],
         );
 
-        assert_eq!(client.get_balance(&creator, &sender), 5u32);
-        assert_eq!(client.get_balance(&creator, &receiver), 3u32);
-        assert_eq!(client.get_total_supply(&creator), 8u32);
+        assert_eq!(client.get_key_balance(&creator, &sender), 5u32);
+        assert_eq!(client.get_key_balance(&creator, &receiver), 3u32);
+        assert_eq!(client.get_total_key_supply(&creator), 8u32);
     }
 }
