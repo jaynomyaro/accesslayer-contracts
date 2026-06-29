@@ -16,7 +16,13 @@ fn numbered_handle(i: u32) -> String {
 fn test_batch_claim_dividend_happy_path() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let creator_a = register_test_creator(&env, &client, "alice");
     let creator_b = register_test_creator(&env, &client, "bob");
@@ -47,7 +53,13 @@ fn test_batch_claim_dividend_happy_path() {
 fn test_batch_claim_zero_claimable_returns_zero_no_revert() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let creator_a = register_test_creator(&env, &client, "alice");
     let creator_b = register_test_creator(&env, &client, "bob");
@@ -72,7 +84,13 @@ fn test_batch_claim_zero_claimable_returns_zero_no_revert() {
 fn test_batch_claim_zeroes_claimable_after_claim() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let creator_a = register_test_creator(&env, &client, "alice");
     let creator_b = register_test_creator(&env, &client, "bob");
@@ -96,7 +114,13 @@ fn test_batch_claim_zeroes_claimable_after_claim() {
 fn test_batch_claim_exceeds_limit_reverts() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let holder = Address::generate(&env);
 
@@ -114,7 +138,13 @@ fn test_batch_claim_exceeds_limit_reverts() {
 fn test_batch_claim_while_paused_fails() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let creator = register_test_creator(&env, &client, "alice");
     let holder = Address::generate(&env);
@@ -136,7 +166,13 @@ fn test_batch_claim_while_paused_fails() {
 fn test_batch_claim_empty_list_returns_empty() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let holder = Address::generate(&env);
     let creators: Vec<Address> = Vec::new(&env);
@@ -149,7 +185,13 @@ fn test_batch_claim_empty_list_returns_empty() {
 fn test_batch_claim_individual_failure_does_not_revert_others() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let creator_a = register_test_creator(&env, &client, "alice");
     let creator_b = register_test_creator(&env, &client, "bob");
@@ -165,8 +207,10 @@ fn test_batch_claim_individual_failure_does_not_revert_others() {
     // No distribution for creator_b — zero claimable
     distribute_test_dividend(&client, &creator_c, &distributor, 30_000);
 
-    let creators =
-        Vec::from_array(&env, [creator_a.clone(), creator_b.clone(), creator_c.clone()]);
+    let creators = Vec::from_array(
+        &env,
+        [creator_a.clone(), creator_b.clone(), creator_c.clone()],
+    );
     let results = client.batch_claim_dividend(&creators, &holder);
 
     assert_eq!(results.len(), 3);
@@ -183,7 +227,13 @@ fn test_batch_claim_individual_failure_does_not_revert_others() {
 fn test_batch_claim_at_limit_of_20_succeeds() {
     let env = test_env_with_auths();
     let (client, _) = register_creator_keys(&env);
-    set_pricing_and_fees(&env, &client, 100, DEFAULT_CREATOR_BPS, DEFAULT_PROTOCOL_BPS);
+    set_pricing_and_fees(
+        &env,
+        &client,
+        100,
+        DEFAULT_CREATOR_BPS,
+        DEFAULT_PROTOCOL_BPS,
+    );
 
     let holder = Address::generate(&env);
 
