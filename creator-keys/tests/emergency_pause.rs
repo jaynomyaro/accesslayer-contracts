@@ -205,7 +205,10 @@ fn test_pause_blocks_registration_not_reads() {
         &None,
         &None,
         &None,
+
         &None,
+
+
     );
     assert_eq!(result, Err(Ok(ContractError::ProtocolPaused)));
 
@@ -224,7 +227,9 @@ fn test_pause_blocks_registration_not_reads() {
             &None,
             &None,
             &None,
+
             &None,
+
         )
         .unwrap();
 }
