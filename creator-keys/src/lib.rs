@@ -74,7 +74,8 @@ pub enum ContractError {
     InsufficientSupply = 25,
     SelfTransfer = 26,
     ZeroTransferAmount = 27,
-    BatchClaimExceedsLimit = 28,
+    InsufficientTreasuryBalance = 28,
+    BatchClaimExceedsLimit = 29,
 }
 
 pub mod fee {
@@ -280,6 +281,7 @@ pub mod constants {
         pub const PROTOCOL_STATE_VERSION: DataKey = DataKey::ProtocolStateVersion;
         pub const PAUSED: DataKey = DataKey::Paused;
         pub const CURVE_SLOPE: DataKey = DataKey::CurveSlope;
+        pub const TREASURY_BALANCE: DataKey = DataKey::TreasuryBalance;
 
         pub fn curve_preset(creator: &Address) -> DataKey {
             DataKey::CurvePreset(creator.clone())
@@ -489,6 +491,7 @@ pub enum DataKey {
     MaxSupply(Address),
     CurveSlope,
     CurvePreset(Address),
+    TreasuryBalance,
 }
 
 /// Time-locked key allocation for creator self-vesting.
@@ -697,6 +700,28 @@ fn credit_protocol_fee_recipient_balance(env: &Env, amount: i128) -> Result<(), 
     Ok(())
 }
 
+/// Reads the accumulated treasury balance, returning `0` when none is stored.
+pub fn read_treasury_balance(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&constants::storage::TREASURY_BALANCE)
+        .unwrap_or(0)
+}
+
+/// Credits `amount` to the protocol treasury balance.
+fn credit_treasury_balance(env: &Env, amount: i128) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let updated = read_treasury_balance(env)
+        .checked_add(amount)
+        .ok_or(ContractError::Overflow)?;
+    env.storage()
+        .persistent()
+        .set(&constants::storage::TREASURY_BALANCE, &updated);
+    Ok(())
+}
+
 fn assert_buy_price_slippage(price: i128, max_price: Option<i128>) -> Result<(), ContractError> {
     if let Some(max) = max_price {
         if price > max {
@@ -740,6 +765,13 @@ fn assert_sell_proceeds_slippage(
 }
 
 fn accrue_sell_protocol_fee(env: &Env, price: i128) -> Result<(), ContractError> {
+    if read_protocol_fee_config(env).is_none() {
+        return Ok(());
+    }
+
+    let (_, protocol_fee) = CreatorKeysContract::compute_fees_for_payment(env.clone(), price)?;
+    credit_treasury_balance(env, protocol_fee)?;
+
     if env
         .storage()
         .persistent()
@@ -748,12 +780,6 @@ fn accrue_sell_protocol_fee(env: &Env, price: i128) -> Result<(), ContractError>
     {
         return Ok(());
     }
-
-    if read_protocol_fee_config(env).is_none() {
-        return Ok(());
-    }
-
-    let (_, protocol_fee) = CreatorKeysContract::compute_fees_for_payment(env.clone(), price)?;
     credit_protocol_fee_recipient_balance(env, protocol_fee)
 }
 
@@ -1214,6 +1240,7 @@ impl CreatorKeysContract {
                     .ok_or(ContractError::Overflow)?;
             credit_creator_fee_recipient_balance(&env, &creator, creator_fee)?;
             credit_protocol_fee_recipient_balance(&env, protocol_fee)?;
+            credit_treasury_balance(&env, protocol_fee)?;
         }
 
         env.events().publish(
@@ -2437,6 +2464,63 @@ impl CreatorKeysContract {
         );
 
         Ok(())
+    }
+
+    /// Returns the current withdrawable treasury balance.
+    ///
+    /// The treasury balance accumulates from the protocol fee portion of every
+    /// `buy_key` and `sell_key` operation. Returns `0` before any fees have accrued.
+    /// This method does not mutate contract state.
+    pub fn get_treasury_balance(env: Env) -> i128 {
+        read_treasury_balance(&env)
+    }
+
+    /// Withdraws `amount` from the protocol treasury to `recipient`.
+    ///
+    /// Only callable by the protocol admin (set via [`set_protocol_admin`]).
+    /// Reverts with:
+    /// - [`ContractError::Unauthorized`] if the caller is not the protocol admin.
+    /// - [`ContractError::NotPositiveAmount`] if `amount` is zero or negative.
+    /// - [`ContractError::InsufficientTreasuryBalance`] if `amount` exceeds the
+    ///   current treasury balance.
+    ///
+    /// On success, decrements the treasury balance and emits a
+    /// [`events::TreasuryWithdrawalEvent`].
+    /// Partial withdrawals are supported; full withdrawal leaves the balance at zero.
+    pub fn withdraw_treasury(
+        env: Env,
+        admin: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> Result<i128, ContractError> {
+        admin.require_auth();
+        assert_is_admin(&env, &admin)?;
+
+        if amount <= 0 {
+            return Err(ContractError::NotPositiveAmount);
+        }
+
+        let current = read_treasury_balance(&env);
+        if amount > current {
+            return Err(ContractError::InsufficientTreasuryBalance);
+        }
+
+        let remaining = current.checked_sub(amount).ok_or(ContractError::Overflow)?;
+        env.storage()
+            .persistent()
+            .set(&constants::storage::TREASURY_BALANCE, &remaining);
+
+        env.events().publish(
+            events::treasury_withdrawal_event_topics(&recipient),
+            events::TreasuryWithdrawalEvent {
+                amount,
+                recipient,
+                remaining_balance: remaining,
+                ledger: env.ledger().sequence(),
+            },
+        );
+
+        Ok(remaining)
     }
 }
 #[cfg(test)]
