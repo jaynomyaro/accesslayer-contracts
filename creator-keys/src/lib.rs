@@ -2450,9 +2450,7 @@ impl CreatorKeysContract {
             return Err(ContractError::InsufficientTreasuryBalance);
         }
 
-        let remaining = current
-            .checked_sub(amount)
-            .ok_or(ContractError::Overflow)?;
+        let remaining = current.checked_sub(amount).ok_or(ContractError::Overflow)?;
         env.storage()
             .persistent()
             .set(&constants::storage::TREASURY_BALANCE, &remaining);

@@ -20,9 +20,7 @@ fn set_admin(env: &Env, client: &CreatorKeysContractClient<'_>) -> Address {
 }
 
 /// Full setup: pricing + fees + admin. Returns (client, admin).
-fn setup_with_admin(
-    env: &Env,
-) -> (CreatorKeysContractClient<'_>, Address) {
+fn setup_with_admin(env: &Env) -> (CreatorKeysContractClient<'_>, Address) {
     let (client, _id) = register_creator_keys(env);
     set_pricing_and_fees(env, &client, 100i128, 9000, 1000);
     let admin = set_admin(env, &client);
@@ -33,7 +31,13 @@ fn setup_with_admin(
 fn buy_one_key(env: &Env, client: &CreatorKeysContractClient<'_>) -> i128 {
     let creator = Address::generate(env);
     let buyer = Address::generate(env);
-    client.register_creator(&creator, &soroban_sdk::String::from_str(env, "alice"), &None, &None, &None);
+    client.register_creator(
+        &creator,
+        &soroban_sdk::String::from_str(env, "alice"),
+        &None,
+        &None,
+        &None,
+    );
     client.buy_key(&creator, &buyer, &100i128, &None);
     // 10% of 100 = 10 stroops
     10i128
@@ -63,7 +67,13 @@ fn get_treasury_balance_accumulates_across_multiple_buys() {
     let (client, admin) = setup_with_admin(&env);
 
     let creator = Address::generate(&env);
-    client.register_creator(&creator, &soroban_sdk::String::from_str(&env, "bob"), &None, &None, &None);
+    client.register_creator(
+        &creator,
+        &soroban_sdk::String::from_str(&env, "bob"),
+        &None,
+        &None,
+        &None,
+    );
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -187,7 +197,13 @@ fn withdraw_treasury_multiple_partial_withdrawals_track_correctly() {
     let (client, admin) = setup_with_admin(&env);
 
     let creator = Address::generate(&env);
-    client.register_creator(&creator, &soroban_sdk::String::from_str(&env, "charlie"), &None, &None, &None);
+    client.register_creator(
+        &creator,
+        &soroban_sdk::String::from_str(&env, "charlie"),
+        &None,
+        &None,
+        &None,
+    );
 
     let buyer = Address::generate(&env);
     client.buy_key(&creator, &buyer, &100i128, &None);
