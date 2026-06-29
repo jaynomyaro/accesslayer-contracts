@@ -76,8 +76,8 @@ pub enum ContractError {
     ZeroTransferAmount = 27,
     WhitelistOnly = 28,
     WhitelistTooLarge = 29,
-    InsufficientTreasuryBalance = 28,
-    BatchClaimExceedsLimit = 29,
+    InsufficientTreasuryBalance = 30,
+    BatchClaimExceedsLimit = 31,
 }
 
 pub mod fee {
@@ -499,6 +499,7 @@ pub enum DataKey {
     CurveSlope,
     CurvePreset(Address),
     Whitelist(Address),
+    TreasuryBalance,
 }
 
 /// Immutable early-access whitelist configuration set at creator registration.
@@ -516,7 +517,6 @@ pub struct WhitelistStatus {
     pub active: bool,
     pub expires_at_ledger: u32,
     pub remaining_ledgers: u32,
-    TreasuryBalance,
 }
 
 /// Time-locked key allocation for creator self-vesting.
