@@ -156,7 +156,14 @@ fn test_register_creator_different_addresses_succeeds() {
         &None,
         &None,
     );
-    client.register_creator(&bob, &String::from_str(&env, "bob"), &None, &None, &None, &None);
+    client.register_creator(
+        &bob,
+        &String::from_str(&env, "bob"),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     assert!(client.is_creator_registered(&alice));
     assert!(client.is_creator_registered(&bob));
@@ -289,7 +296,8 @@ fn test_register_creator_handle_one_over_max_rejected() {
 
     let creator = Address::generate(&env);
     let over_max_handle = String::from_str(&env, &"a".repeat((HANDLE_LEN_MAX + 1) as usize));
-    let result = client.try_register_creator(&creator, &over_max_handle, &None, &None, &None, &None);
+    let result =
+        client.try_register_creator(&creator, &over_max_handle, &None, &None, &None, &None);
 
     assert_eq!(result, Err(Ok(ContractError::HandleTooLong)));
 }

@@ -121,8 +121,7 @@ fn test_buy_splits_creator_fee_between_creator_recipient_and_co_creator() {
     );
     let buyer = Address::generate(&env);
     let quote = client.get_buy_quote(&creator);
-    let expected_creator_fee =
-        compute_expected_creator_fee(KEY_PRICE, CREATOR_BPS, PROTOCOL_BPS);
+    let expected_creator_fee = compute_expected_creator_fee(KEY_PRICE, CREATOR_BPS, PROTOCOL_BPS);
     let (expected_recipient_fee, expected_co_creator_fee) =
         split_creator_fee(expected_creator_fee, CO_CREATOR_SHARE_BPS);
 
@@ -155,12 +154,8 @@ fn test_sell_splits_creator_fee_and_keeps_config_immutable() {
     let (client, _) = register_creator_keys(&env);
     set_pricing_and_fees(&env, &client, KEY_PRICE, CREATOR_BPS, PROTOCOL_BPS);
 
-    let (creator, co_creator, config) = register_creator_with_co_creator(
-        &env,
-        &client,
-        "alice",
-        CO_CREATOR_SHARE_BPS,
-    );
+    let (creator, co_creator, config) =
+        register_creator_with_co_creator(&env, &client, "alice", CO_CREATOR_SHARE_BPS);
     let holder = Address::generate(&env);
     let buy_quote = client.get_buy_quote(&creator);
     client.buy_key(&creator, &holder, &buy_quote.total_amount, &None);
