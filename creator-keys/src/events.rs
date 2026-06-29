@@ -55,6 +55,32 @@ pub const POLL_CREATED_EVENT_NAME: Symbol = symbol_short!("poll_new");
 /// Event name for governance poll votes.
 pub const POLL_VOTE_EVENT_NAME: Symbol = symbol_short!("poll_vote");
 
+/// Topic index for the event name in common event topic tuples.
+pub const TOPIC_EVENT_NAME_INDEX: u32 = 0;
+
+/// Topic index for the creator address in common event topic tuples.
+pub const TOPIC_CREATOR_INDEX: u32 = 1;
+
+/// Stable field order for registration event payloads.
+pub const REGISTER_EVENT_DATA_FIELDS: [&str; 6] = [
+    "creator",
+    "handle",
+    "supply",
+    "holder_count",
+    "creator_bps",
+    "protocol_bps",
+];
+
+/// Stable field order for buy event payloads.
+pub const BUY_EVENT_DATA_FIELDS: [&str; 2] = ["supply", "payment"];
+
+/// Stable field order for sell event payloads.
+pub const SELL_EVENT_DATA_FIELDS: [&str; 1] = ["supply"];
+
+/// Stable field order for buyback event payloads.
+pub const BUYBACK_EVENT_DATA_FIELDS: [&str; 5] =
+    ["creator", "amount", "price_paid", "new_supply", "ledger"];
+
 const MIN_POLL_OPTIONS: u32 = 2;
 const MAX_POLL_OPTIONS: u32 = 4;
 const MAX_QUESTION_CHARS: u32 = 280;
