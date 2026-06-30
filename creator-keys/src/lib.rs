@@ -1054,6 +1054,27 @@ fn assert_whitelist_buy_allowed(
     Err(ContractError::WhitelistOnly)
 }
 
+fn extend_creator_registration_ttl(
+    env: &Env,
+    creator_key: &DataKey,
+    preset_key: &DataKey,
+    whitelist_key: &DataKey,
+    current_ledger: u32,
+) {
+    let extend_to = current_ledger + CREATOR_TTL_LEDGERS;
+    env.storage()
+        .persistent()
+        .extend_ttl(creator_key, current_ledger, extend_to);
+    env.storage()
+        .persistent()
+        .extend_ttl(preset_key, current_ledger, extend_to);
+    if env.storage().persistent().has(whitelist_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(whitelist_key, current_ledger, extend_to);
+    }
+}
+
 fn extend_creator_ttl(env: &Env, creator: &Address) {
     let current_ledger = env.ledger().sequence();
     let extend_to = current_ledger + CREATOR_TTL_LEDGERS;
@@ -1225,23 +1246,8 @@ impl CreatorKeysContract {
 
         // Persist profile before event publication so indexers reading contract state
         // after this tx observe the same registration payload that was emitted.
-        // Keep the registration TTL and event emission in this block so merge conflict
-        // resolutions do not accidentally splice registration state writes into trading flows
-        // or leave the `register_creator` implementation with an unclosed delimiter.
         env.storage().persistent().set(&key, &profile);
-        // Set initial TTL for creator storage
-        let extend_to = current_ledger + CREATOR_TTL_LEDGERS;
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, current_ledger, extend_to);
-        env.storage()
-            .persistent()
-            .extend_ttl(&preset_key, current_ledger, extend_to);
-        if env.storage().persistent().has(&whitelist_key) {
-            env.storage()
-                .persistent()
-                .extend_ttl(&whitelist_key, current_ledger, extend_to);
-        }
+        extend_creator_registration_ttl(&env, &key, &preset_key, &whitelist_key, current_ledger);
 
         env.events().publish(
             events::register_event_topics(&profile.creator),
