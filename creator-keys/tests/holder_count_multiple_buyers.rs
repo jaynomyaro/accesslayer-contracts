@@ -17,7 +17,17 @@ fn holder_count_tracks_distinct_buyers_and_decrements_on_exit() {
     let _admin = set_key_price_for_tests(&env, &client, 100);
 
     let creator = Address::generate(&env);
-    client.register_creator(&creator, &String::from_str(&env, "creator"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "creator"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     let buyer_a = Address::generate(&env);
     let buyer_b = Address::generate(&env);

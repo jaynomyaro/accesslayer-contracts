@@ -109,7 +109,7 @@ if from == to {
 
 - A self-transfer would decrement and increment the same holder's balance, resulting in a no-op state change.
 - Allowing it would waste ledger space and caller gas without providing any useful semantic.
-- Self-transfer is rejected with a dedicated `ContractError::SelfTransfer` variant rather than reusing `ContractError::ZeroAddress`. The two errors have distinct semantics: `ZeroAddress` rejects the all-zero Stellar pubkey from being assigned as a fee recipient or treasury target, while `SelfTransfer` rejects a no-op balance move between two equal sender/recipient addresses.
+- The dedicated `SelfTransfer` error code makes the rejection reason unambiguous for clients and indexers, rather than overloading a zero-address error.
 
 ### Other preconditions
 

@@ -9,7 +9,17 @@ fn setup_with_creator(env: &Env) -> (CreatorKeysContractClient<'_>, Address, Add
     let admin = Address::generate(env);
     let creator = Address::generate(env);
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator, &String::from_str(env, "test"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(env, "test"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
     (client, creator, admin)
 }
 
@@ -172,8 +182,28 @@ fn test_holder_key_count_view_zero_keys_different_creators() {
     let holder = Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator_a, &String::from_str(&env, "alice"), &None, &None);
-    client.register_creator(&creator_b, &String::from_str(&env, "bob"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator_a.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator_b.clone(),
+            handle: String::from_str(&env, "bob"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     // Holder buys keys only from creator A
     client.buy_key(&creator_a, &holder, &100i128, &None);

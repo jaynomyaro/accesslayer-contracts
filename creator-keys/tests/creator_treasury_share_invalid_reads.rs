@@ -42,7 +42,17 @@ fn test_get_creator_treasury_share_fails_when_fee_config_not_set() {
     let creator = soroban_sdk::Address::generate(&env);
 
     // Register creator WITHOUT calling set_fee_config.
-    client.register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     let result = client.try_get_creator_treasury_share(&creator);
     assert_eq!(

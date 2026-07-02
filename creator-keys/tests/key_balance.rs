@@ -30,7 +30,17 @@ fn test_key_balance_increments_on_buy() {
     let buyer = soroban_sdk::Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     assert_eq!(client.get_key_balance(&creator, &buyer), 0);
 
@@ -55,7 +65,17 @@ fn test_key_balance_is_per_buyer() {
     let buyer_b = soroban_sdk::Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     client.buy_key(&creator, &buyer_a, &100i128, &None);
     client.buy_key(&creator, &buyer_a, &100i128, &None);
@@ -79,8 +99,28 @@ fn test_key_balance_is_per_creator() {
     let buyer = soroban_sdk::Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator_a, &String::from_str(&env, "alice"), &None, &None);
-    client.register_creator(&creator_b, &String::from_str(&env, "bob"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator_a.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator_b.clone(),
+            handle: String::from_str(&env, "bob"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 
     client.buy_key(&creator_a, &buyer, &100i128, &None);
 
@@ -103,8 +143,13 @@ fn test_key_balance_zero_for_unregistered_creator_even_when_other_balances_exist
 
     client.set_key_price(&admin, &100i128);
     client.register_creator(
-        &registered_creator,
-        &String::from_str(&env, "alice"),
+        &creator_keys::RegisterCreatorParams {
+            creator: registered_creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
         &None,
         &None,
     );
@@ -127,7 +172,17 @@ fn test_key_balance_zero_for_registered_creator_and_unseen_wallet() {
     let unseen_wallet = soroban_sdk::Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
     client.buy_key(&creator, &buyer_with_balance, &100i128, &None);
 
     assert_eq!(client.get_key_balance(&creator, &unseen_wallet), 0);
@@ -148,7 +203,17 @@ fn test_key_balance_returns_zero_for_uninitialized_holder() {
     let uninitialized_wallet = soroban_sdk::Address::generate(&env);
 
     client.set_key_price(&admin, &100i128);
-    client.register_creator(&creator, &String::from_str(&env, "alice"), &None, &None);
+    client.register_creator(
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
     client.buy_key(&creator, &buyer_a, &100i128, &None);
     client.buy_key(&creator, &buyer_a, &100i128, &None);
     client.buy_key(&creator, &buyer_b, &100i128, &None);

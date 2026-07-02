@@ -1,7 +1,7 @@
 #![no_std]
 pub mod quote_view_errors;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
 
 pub mod events;
 
@@ -74,6 +74,11 @@ pub enum ContractError {
     InsufficientSupply = 25,
     SelfTransfer = 26,
     ZeroTransferAmount = 27,
+    InsufficientTreasuryBalance = 28,
+    BatchClaimExceedsLimit = 29,
+    InvalidCoCreatorShare = 30,
+    WhitelistOnly = 31,
+    WhitelistTooLarge = 32,
 }
 
 pub mod fee {
@@ -152,6 +157,33 @@ pub mod fee {
         checked_div_i128(amount.checked_mul(bps as i128)?, BPS_MAX as i128)
     }
 
+    /// Computes the net buyback cost after deducting the protocol fee.
+    ///
+    /// Returns `None` if the fee computation overflows or the subtraction overflows.
+    /// The result is `gross_price - protocol_fee` where `protocol_fee` is calculated
+    /// via `apply_percentage_fee`. This mirrors the fee logic used for regular buys.
+    pub fn compute_net_buyback_cost(gross_price: i128, protocol_fee_bps: u32) -> Option<i128> {
+        let protocol_fee = apply_percentage_fee(gross_price, protocol_fee_bps)?;
+        gross_price.checked_sub(protocol_fee)
+    }
+    ///
+    /// Returns `None` if the fee computation or addition overflows. This helper
+    /// exists so the buyback path shares the same bps math used in regular buys
+    /// instead of reimplementing the protocol fee arithmetic inline.
+    pub fn compute_buyback_cost(gross_price: i128, protocol_fee_bps: u32) -> Option<i128> {
+        let protocol_fee = apply_percentage_fee(gross_price, protocol_fee_bps)?;
+        gross_price.checked_add(protocol_fee)
+    }
+
+    /// Computes the net buyback cost after deducting the protocol fee.
+    ///
+    /// Takes the gross buyback price and subtracts the protocol fee portion,
+    /// returning the net amount that remains after fee deduction. Uses the same
+    /// `apply_percentage_fee` helper as the regular buy and buyback fee paths
+    /// so the bps arithmetic stays consistent across the contract.
+    ///
+    /// Returns `None` if the fee computation or subtraction would underflow.
+    ///
     /// Computes the fee split safely, returning `None` if multiplication or subtraction overflows.
     pub fn checked_compute_fee_split(
         total: i128,
@@ -164,6 +196,19 @@ pub mod fee {
         let protocol_amount = apply_percentage_fee(total, protocol_bps)?;
         let creator_amount = checked_sub_i128(total, protocol_amount)?;
         Some((creator_amount, protocol_amount))
+    }
+
+    /// Splits `total` into `(remainder, shared_amount)` by basis points.
+    ///
+    /// Remainder from integer division stays with the primary recipient so the
+    /// two outputs always sum to `total`.
+    pub fn checked_split_bps_amount(total: i128, share_bps: u32) -> Option<(i128, i128)> {
+        if total <= 0 {
+            return Some((0, 0));
+        }
+        let shared_amount = apply_percentage_fee(total, share_bps)?;
+        let remainder = checked_sub_i128(total, shared_amount)?;
+        Some((remainder, shared_amount))
     }
 
     /// Performs checked integer multiplication for quote math helpers.
@@ -252,9 +297,26 @@ pub mod constants {
         pub const PROTOCOL_STATE_VERSION: DataKey = DataKey::ProtocolStateVersion;
         pub const PAUSED: DataKey = DataKey::Paused;
         pub const CURVE_SLOPE: DataKey = DataKey::CurveSlope;
+        pub const TREASURY_BALANCE: DataKey = DataKey::TreasuryBalance;
+
+        pub fn curve_preset(creator: &Address) -> DataKey {
+            DataKey::CurvePreset(creator.clone())
+        }
 
         pub fn creator_fee_balance(creator: &Address) -> DataKey {
             DataKey::CreatorFeeBalance(creator.clone())
+        }
+
+        pub fn co_creator(creator: &Address) -> DataKey {
+            DataKey::CoCreator(creator.clone())
+        }
+
+        pub fn co_creator_fee_balance(creator: &Address, co_creator: &Address) -> DataKey {
+            DataKey::CoCreatorFeeBalance(creator.clone(), co_creator.clone())
+        }
+
+        pub fn whitelist(creator: &Address) -> DataKey {
+            DataKey::Whitelist(creator.clone())
         }
 
         pub fn creator(creator: &Address) -> DataKey {
@@ -300,6 +362,8 @@ pub mod constants {
         pub const FEE_CONFIG: &str = "get_creator_fee_config";
         pub const FEE_RECIPIENT: &str = "get_creator_fee_recipient";
         pub const FEE_RECIPIENT_BALANCE: &str = "get_creator_fee_balance";
+        pub const CO_CREATOR: &str = "get_co_creator";
+        pub const CO_CREATOR_FEE_BALANCE: &str = "get_co_creator_fee_balance";
         pub const HOLDER_KEY_COUNT: &str = "get_holder_key_count";
         pub const PROFILE: &str = "get_creator";
         pub const SUPPLY: &str = "get_creator_supply";
@@ -423,6 +487,15 @@ pub const KEY_DECIMALS: u32 = 7;
 pub const CREATOR_TTL_LEDGERS: u32 = 6311520; // ~2 years at 5s per ledger
 pub const HANDLE_LEN_MIN: u32 = 3;
 pub const HANDLE_LEN_MAX: u32 = 32;
+pub const MAX_WHITELIST_SIZE: u32 = 500;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum CurvePreset {
+    Linear = 0,
+    Quadratic = 1,
+    Flat = 2,
+}
 
 /// Canonical storage key schema for persistent protocol state.
 ///
@@ -448,6 +521,11 @@ pub enum DataKey {
     LockedAllocation(Address),
     MaxSupply(Address),
     CurveSlope,
+    CurvePreset(Address),
+    TreasuryBalance,
+    CoCreator(Address),
+    CoCreatorFeeBalance(Address, Address),
+    Whitelist(Address),
 }
 
 /// Time-locked key allocation for creator self-vesting.
@@ -460,6 +538,46 @@ pub struct LockedAllocation {
     pub amount: u32,
     pub unlock_ledger: u32,
     pub claimed: bool,
+}
+
+/// Optional immutable collaborator split configured at creator registration.
+///
+/// `share_bps` is the co-creator's share of the creator fee, not of the full
+/// trade price. It must be in the inclusive range `1..=9999`.
+#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+pub struct CoCreatorConfig {
+    pub address: Address,
+    pub share_bps: u32,
+}
+
+/// Required creator identity fields for registration.
+///
+/// Grouping these fields keeps the public contract entrypoint under Clippy's
+/// argument-count threshold without changing validation or storage behavior for
+/// any registration option.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct RegisterCreatorParams {
+    pub creator: Address,
+    pub handle: String,
+}
+
+/// Optional whitelist window configured at creator registration.
+#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+pub struct WhitelistConfig {
+    pub addresses: Vec<Address>,
+    pub window_ledgers: u32,
+}
+
+/// Read-only status for a creator's whitelist window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct WhitelistStatus {
+    pub active: bool,
+    pub expires_at_ledger: u32,
+    pub remaining_ledgers: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -476,6 +594,64 @@ pub struct CreatorProfile {
     /// field was added deserialise correctly — the Soroban persistent storage layer
     /// reads structs by field index, so appending is the only safe extension pattern.
     pub registered_at: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+pub struct ClaimResult {
+    pub creator: Address,
+    pub amount_claimed: i128,
+}
+
+fn validate_whitelist_config(config: &WhitelistConfig) -> Result<(), ContractError> {
+    if config.addresses.len() > MAX_WHITELIST_SIZE {
+        return Err(ContractError::WhitelistTooLarge);
+    }
+    Ok(())
+}
+
+fn read_whitelist_config(env: &Env, creator: &Address) -> Option<WhitelistConfig> {
+    env.storage()
+        .persistent()
+        .get::<DataKey, WhitelistConfig>(&constants::storage::whitelist(creator))
+}
+
+fn whitelist_status(env: &Env, profile: &CreatorProfile) -> WhitelistStatus {
+    let Some(config) = read_whitelist_config(env, &profile.creator) else {
+        return WhitelistStatus {
+            active: false,
+            expires_at_ledger: 0,
+            remaining_ledgers: 0,
+        };
+    };
+    let expires_at_ledger = profile.registered_at.saturating_add(config.window_ledgers);
+    let current_ledger = env.ledger().sequence();
+    let remaining_ledgers = expires_at_ledger.saturating_sub(current_ledger);
+    WhitelistStatus {
+        active: remaining_ledgers > 0,
+        expires_at_ledger,
+        remaining_ledgers,
+    }
+}
+
+fn assert_whitelist_allows_buy(
+    env: &Env,
+    profile: &CreatorProfile,
+    buyer: &Address,
+) -> Result<(), ContractError> {
+    let status = whitelist_status(env, profile);
+    if !status.active {
+        return Ok(());
+    }
+    let Some(config) = read_whitelist_config(env, &profile.creator) else {
+        return Ok(());
+    };
+    for address in config.addresses.iter() {
+        if address == *buyer {
+            return Ok(());
+        }
+    }
+    Err(ContractError::WhitelistOnly)
 }
 
 /// Reads a creator profile from storage, returning `None` for unregistered creators.
@@ -547,6 +723,73 @@ fn credit_creator_fee_recipient_balance(
     let current = read_creator_fee_recipient_balance(env, creator);
     let updated = current.checked_add(amount).ok_or(ContractError::Overflow)?;
     env.storage().persistent().set(&key, &updated);
+    Ok(())
+}
+
+fn read_co_creator_config(env: &Env, creator: &Address) -> Option<CoCreatorConfig> {
+    let key = constants::storage::co_creator(creator);
+    env.storage()
+        .persistent()
+        .get::<DataKey, CoCreatorConfig>(&key)
+}
+
+fn validate_co_creator_config(env: &Env, config: &CoCreatorConfig) -> Result<(), ContractError> {
+    validate_non_zero_address(env, &config.address)?;
+    if !(1..fee::BPS_MAX).contains(&config.share_bps) {
+        return Err(ContractError::InvalidCoCreatorShare);
+    }
+    Ok(())
+}
+
+/// Reads accrued fee balance for a creator's configured co-creator.
+pub fn read_co_creator_fee_balance(env: &Env, creator: &Address, co_creator: &Address) -> i128 {
+    let key = constants::storage::co_creator_fee_balance(creator, co_creator);
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn credit_co_creator_fee_balance(
+    env: &Env,
+    creator: &Address,
+    co_creator: &Address,
+    amount: i128,
+) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let key = constants::storage::co_creator_fee_balance(creator, co_creator);
+    let current = read_co_creator_fee_balance(env, creator, co_creator);
+    let updated = current.checked_add(amount).ok_or(ContractError::Overflow)?;
+    env.storage().persistent().set(&key, &updated);
+    Ok(())
+}
+
+fn credit_creator_fee(env: &Env, creator: &Address, amount: i128) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Ok(());
+    }
+
+    let Some(config) = read_co_creator_config(env, creator) else {
+        return credit_creator_fee_recipient_balance(env, creator, amount);
+    };
+
+    let co_creator = config.address;
+    let (creator_recipient_amount, co_creator_amount) =
+        fee::checked_split_bps_amount(amount, config.share_bps).ok_or(ContractError::Overflow)?;
+    credit_creator_fee_recipient_balance(env, creator, creator_recipient_amount)?;
+    credit_co_creator_fee_balance(env, creator, &co_creator, co_creator_amount)?;
+
+    if co_creator_amount > 0 {
+        env.events().publish(
+            events::co_creator_fee_earned_topics(creator, &co_creator),
+            events::CoCreatorFeeEarned {
+                creator_id: creator.clone(),
+                co_creator,
+                amount: co_creator_amount,
+                ledger: env.ledger().sequence(),
+            },
+        );
+    }
+
     Ok(())
 }
 
@@ -649,6 +892,28 @@ fn credit_protocol_fee_recipient_balance(env: &Env, amount: i128) -> Result<(), 
     Ok(())
 }
 
+/// Reads the accumulated treasury balance, returning `0` when none is stored.
+pub fn read_treasury_balance(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&constants::storage::TREASURY_BALANCE)
+        .unwrap_or(0)
+}
+
+/// Credits `amount` to the protocol treasury balance.
+fn credit_treasury_balance(env: &Env, amount: i128) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let updated = read_treasury_balance(env)
+        .checked_add(amount)
+        .ok_or(ContractError::Overflow)?;
+    env.storage()
+        .persistent()
+        .set(&constants::storage::TREASURY_BALANCE, &updated);
+    Ok(())
+}
+
 fn assert_buy_price_slippage(price: i128, max_price: Option<i128>) -> Result<(), ContractError> {
     if let Some(max) = max_price {
         if price > max {
@@ -691,22 +956,26 @@ fn assert_sell_proceeds_slippage(
     Ok(())
 }
 
-fn accrue_sell_protocol_fee(env: &Env, price: i128) -> Result<(), ContractError> {
-    if env
-        .storage()
-        .persistent()
-        .get::<DataKey, Address>(&constants::storage::PROTOCOL_FEE_RECIPIENT)
-        .is_none()
-    {
-        return Ok(());
-    }
-
+fn accrue_sell_trade_fees(env: &Env, creator: &Address, price: i128) -> Result<(), ContractError> {
     if read_protocol_fee_config(env).is_none() {
         return Ok(());
     }
 
-    let (_, protocol_fee) = CreatorKeysContract::compute_fees_for_payment(env.clone(), price)?;
-    credit_protocol_fee_recipient_balance(env, protocol_fee)
+    let (creator_fee, protocol_fee) =
+        CreatorKeysContract::compute_fees_for_payment(env.clone(), price)?;
+    credit_creator_fee(env, creator, creator_fee)?;
+    credit_treasury_balance(env, protocol_fee)?;
+
+    if env
+        .storage()
+        .persistent()
+        .get::<DataKey, Address>(&constants::storage::PROTOCOL_FEE_RECIPIENT)
+        .is_some()
+    {
+        credit_protocol_fee_recipient_balance(env, protocol_fee)?;
+    }
+
+    Ok(())
 }
 
 /// Resolves and validates the shared inputs required by read-only quote methods.
@@ -726,7 +995,7 @@ fn resolve_quote_inputs(env: &Env, creator: &Address) -> Result<Option<i128>, Co
     };
 
     let profile = read_registered_creator_profile(env, creator)?;
-    let curve_price = compute_bonding_curve_price(env, normalized, profile.supply)?;
+    let curve_price = compute_bonding_curve_price(env, creator, normalized, profile.supply)?;
     normalize_quote_amount(curve_price)
 }
 
@@ -765,11 +1034,6 @@ fn compute_buyback_base_price(unit_price: i128, amount: u32) -> Result<i128, Con
         .ok_or(ContractError::Overflow)
 }
 
-fn compute_buyback_protocol_fee(env: &Env, base_price: i128) -> Result<i128, ContractError> {
-    let config = read_required_protocol_fee_config(env)?;
-    fee::apply_percentage_fee(base_price, config.protocol_bps).ok_or(ContractError::Overflow)
-}
-
 fn read_curve_slope(env: &Env) -> i128 {
     env.storage()
         .persistent()
@@ -779,19 +1043,40 @@ fn read_curve_slope(env: &Env) -> i128 {
 
 fn compute_bonding_curve_price(
     env: &Env,
+    creator: &Address,
     base_price: i128,
     supply: u32,
 ) -> Result<i128, ContractError> {
-    let slope = read_curve_slope(env);
-    if slope == 0 {
-        return Ok(base_price);
+    let preset = env
+        .storage()
+        .persistent()
+        .get(&constants::storage::curve_preset(creator))
+        .unwrap_or(CurvePreset::Linear);
+
+    match preset {
+        CurvePreset::Flat => Ok(base_price),
+        CurvePreset::Linear => {
+            let slope = read_curve_slope(env);
+            let supply_component = slope
+                .checked_mul(i128::from(supply))
+                .ok_or(ContractError::Overflow)?;
+            base_price
+                .checked_add(supply_component)
+                .ok_or(ContractError::Overflow)
+        }
+        CurvePreset::Quadratic => {
+            let slope = read_curve_slope(env);
+            let supply_sq = (supply as i128)
+                .checked_mul(supply as i128)
+                .ok_or(ContractError::Overflow)?;
+            let supply_component = slope
+                .checked_mul(supply_sq)
+                .ok_or(ContractError::Overflow)?;
+            base_price
+                .checked_add(supply_component)
+                .ok_or(ContractError::Overflow)
+        }
     }
-    let supply_component = slope
-        .checked_mul(i128::from(supply))
-        .ok_or(ContractError::Overflow)?;
-    base_price
-        .checked_add(supply_component)
-        .ok_or(ContractError::Overflow)
 }
 
 fn zero_quote_response() -> QuoteResponse {
@@ -934,6 +1219,32 @@ fn extend_creator_ttl(env: &Env, creator: &Address) {
             .persistent()
             .extend_ttl(&max_supply_key, threshold, extend_to);
     }
+
+    let curve_preset_key = constants::storage::curve_preset(creator);
+    if env.storage().persistent().has(&curve_preset_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&curve_preset_key, threshold, extend_to);
+    }
+
+    let co_creator_key = constants::storage::co_creator(creator);
+    if env.storage().persistent().has(&co_creator_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&co_creator_key, threshold, extend_to);
+
+        if let Some(config) = read_co_creator_config(env, creator) {
+            let co_creator_balance_key =
+                constants::storage::co_creator_fee_balance(creator, &config.address);
+            if env.storage().persistent().has(&co_creator_balance_key) {
+                env.storage().persistent().extend_ttl(
+                    &co_creator_balance_key,
+                    threshold,
+                    extend_to,
+                );
+            }
+        }
+    }
 }
 
 #[contract]
@@ -956,17 +1267,29 @@ impl CreatorKeysContract {
     /// - `locked_allocation`: optional time-locked key allocation for creator self-vesting.
     ///   If provided, `unlock_ledger` must be strictly greater than current ledger.
     /// - `max_supply`: optional maximum supply cap. If provided, must be greater than zero.
+    /// - `co_creator`: optional immutable collaborator split. If provided, `share_bps`
+    ///   must be in the inclusive range `1..=9999`.
     pub fn register_creator(
         env: Env,
-        creator: Address,
-        handle: String,
+        params: RegisterCreatorParams,
         locked_allocation: Option<LockedAllocation>,
         max_supply: Option<u32>,
+        curve_preset: Option<CurvePreset>,
+        co_creator: Option<CoCreatorConfig>,
+        whitelist: Option<WhitelistConfig>,
     ) -> Result<(), ContractError> {
+        let RegisterCreatorParams { creator, handle } = params;
+
         creator.require_auth();
         assert_not_paused(&env)?;
 
         validate_creator_handle(&handle)?;
+        if let Some(config) = co_creator.as_ref() {
+            validate_co_creator_config(&env, config)?;
+        }
+        if let Some(config) = whitelist.as_ref() {
+            validate_whitelist_config(config)?;
+        }
 
         let key = constants::storage::creator(&creator);
         // Creator profile storage is a single source of truth keyed by creator address.
@@ -1021,6 +1344,23 @@ impl CreatorKeysContract {
                 .set(&constants::storage::max_supply(&creator), &cap);
         }
 
+        // Handle curve preset
+        let preset = curve_preset.unwrap_or(CurvePreset::Linear);
+        let preset_key = constants::storage::curve_preset(&creator);
+        env.storage().persistent().set(&preset_key, &preset);
+
+        if let Some(config) = co_creator {
+            env.storage()
+                .persistent()
+                .set(&constants::storage::co_creator(&creator), &config);
+        }
+
+        if let Some(config) = whitelist {
+            env.storage()
+                .persistent()
+                .set(&constants::storage::whitelist(&creator), &config);
+        }
+
         let profile = CreatorProfile {
             creator: creator.clone(),
             handle,
@@ -1043,6 +1383,21 @@ impl CreatorKeysContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, current_ledger, extend_to);
+        env.storage()
+            .persistent()
+            .extend_ttl(&preset_key, current_ledger, extend_to);
+        let co_creator_key = constants::storage::co_creator(&creator);
+        if env.storage().persistent().has(&co_creator_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&co_creator_key, current_ledger, extend_to);
+        }
+        let whitelist_key = constants::storage::whitelist(&creator);
+        if env.storage().persistent().has(&whitelist_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&whitelist_key, current_ledger, extend_to);
+        }
 
         env.events().publish(
             events::register_event_topics(&profile.creator),
@@ -1080,7 +1435,8 @@ impl CreatorKeysContract {
             .ok_or(ContractError::KeyPriceNotSet)?;
 
         let mut profile: CreatorProfile = read_registered_creator_profile(&env, &creator)?;
-        let price = compute_bonding_curve_price(&env, base_price, profile.supply)?;
+        assert_whitelist_allows_buy(&env, &profile, &buyer)?;
+        let price = compute_bonding_curve_price(&env, &creator, base_price, profile.supply)?;
 
         assert_buy_price_slippage(price, max_price)?;
 
@@ -1132,8 +1488,9 @@ impl CreatorKeysContract {
             let (creator_fee, protocol_fee) =
                 fee::checked_compute_fee_split(price, config.creator_bps, config.protocol_bps)
                     .ok_or(ContractError::Overflow)?;
-            credit_creator_fee_recipient_balance(&env, &creator, creator_fee)?;
+            credit_creator_fee(&env, &creator, creator_fee)?;
             credit_protocol_fee_recipient_balance(&env, protocol_fee)?;
+            credit_treasury_balance(&env, protocol_fee)?;
         }
 
         env.events().publish(
@@ -1158,19 +1515,23 @@ impl CreatorKeysContract {
 
         let mut profile: CreatorProfile = read_registered_creator_profile(&env, &creator)?;
 
-        let base_price: i128 = env
-            .storage()
-            .persistent()
-            .get(&constants::storage::KEY_PRICE)
-            .ok_or(ContractError::KeyPriceNotSet)?;
-        let price = compute_bonding_curve_price(&env, base_price, profile.supply)?;
-
         let balance_key = constants::storage::key_balance(&creator, &seller);
         // Missing balance entries are interpreted as zero and rejected consistently.
         let current_balance: u32 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         if current_balance == 0 {
             return Err(ContractError::InsufficientBalance);
         }
+
+        let base_price: i128 = env
+            .storage()
+            .persistent()
+            .get(&constants::storage::KEY_PRICE)
+            .ok_or(ContractError::KeyPriceNotSet)?;
+        let sell_supply = profile
+            .supply
+            .checked_sub(1)
+            .ok_or(ContractError::SellUnderflow)?;
+        let price = compute_bonding_curve_price(&env, &creator, base_price, sell_supply)?;
 
         // Settle dividends before balance changes so earnings are captured at old balance.
         settle_holder_dividends(&env, &creator, &seller, current_balance)?;
@@ -1197,7 +1558,7 @@ impl CreatorKeysContract {
         // supply/holder_count invariants for subsequent reads.
         env.storage().persistent().set(&key, &profile);
         env.storage().persistent().set(&balance_key, &new_balance);
-        accrue_sell_protocol_fee(&env, price)?;
+        accrue_sell_trade_fees(&env, &creator, price)?;
 
         env.events().publish(
             (events::SELL_EVENT_NAME, creator.clone(), seller),
@@ -1213,7 +1574,8 @@ impl CreatorKeysContract {
     /// Creator-only buyback that burns keys from the creator's own held balance.
     ///
     /// The creator pays the current gross buyback cost plus protocol fee, while the
-    /// creator fee is waived. To preserve the contract's supply/balance invariants,
+    /// creator fee is waived (creator cannot pay themselves a fee). The protocol fee
+    /// still applies. To preserve the contract's supply/balance invariants,
     /// the burned amount is decremented from the creator wallet's existing key balance.
     pub fn buyback(
         env: Env,
@@ -1240,11 +1602,13 @@ impl CreatorKeysContract {
             .get(&constants::storage::KEY_PRICE)
             .ok_or(ContractError::KeyPriceNotSet)?;
         let mut profile: CreatorProfile = read_registered_creator_profile(&env, &creator)?;
-        let curve_price = compute_bonding_curve_price(&env, base_price_stored, profile.supply)?;
+        let curve_price =
+            compute_bonding_curve_price(&env, &creator, base_price_stored, profile.supply)?;
         let base_price = compute_buyback_base_price(curve_price, amount)?;
-        let protocol_fee = compute_buyback_protocol_fee(&env, base_price)?;
-        let total_cost = base_price
-            .checked_add(protocol_fee)
+        let config = read_required_protocol_fee_config(&env)?;
+        let protocol_fee = fee::apply_percentage_fee(base_price, config.protocol_bps)
+            .ok_or(ContractError::Overflow)?;
+        let total_cost = fee::compute_buyback_cost(base_price, config.protocol_bps)
             .ok_or(ContractError::Overflow)?;
 
         assert_buyback_total_cost_slippage(total_cost, max_total_cost)?;
@@ -1503,10 +1867,21 @@ impl CreatorKeysContract {
             .unwrap_or(0)
     }
 
-    /// Read-only view: returns whether a creator is registered in the contract.
+    /// Read-only view: returns a creator's whitelist window status.
     ///
-    /// Returns `true` if a [`CreatorProfile`] exists for the given address,
-    /// `false` otherwise. Does not mutate state.
+    /// Returns inactive defaults for unregistered creators or creators without
+    /// a configured whitelist. Does not mutate state.
+    pub fn get_whitelist_status(env: Env, creator: Address) -> WhitelistStatus {
+        let Some(profile) = read_creator_profile(&env, &creator) else {
+            return WhitelistStatus {
+                active: false,
+                expires_at_ledger: 0,
+                remaining_ledgers: 0,
+            };
+        };
+        whitelist_status(&env, &profile)
+    }
+
     pub fn is_creator_registered(env: Env, creator: Address) -> bool {
         read_creator_profile(&env, &creator).is_some()
     }
@@ -1527,6 +1902,26 @@ impl CreatorKeysContract {
     pub fn get_creator_fee_balance(env: Env, creator: Address) -> Result<i128, ContractError> {
         read_registered_creator_profile(&env, &creator)?;
         Ok(read_creator_fee_recipient_balance(&env, &creator))
+    }
+
+    /// Read-only view: returns the optional immutable co-creator config.
+    ///
+    /// Returns `None` when the creator was registered without a co-creator split.
+    pub fn get_co_creator(env: Env, creator: Address) -> Option<CoCreatorConfig> {
+        read_co_creator_config(&env, &creator)
+    }
+
+    /// Read-only view: returns accrued co-creator fee balance for a creator.
+    ///
+    /// Fails with [`ContractError::NotRegistered`] if the creator is not registered.
+    /// Returns `0` when no co-creator fees have accrued for the address.
+    pub fn get_co_creator_fee_balance(
+        env: Env,
+        creator: Address,
+        co_creator: Address,
+    ) -> Result<i128, ContractError> {
+        read_registered_creator_profile(&env, &creator)?;
+        Ok(read_co_creator_fee_balance(&env, &creator, &co_creator))
     }
 
     /// Read-only view: returns the configured creator fee rate in basis points.
@@ -1874,7 +2269,9 @@ impl CreatorKeysContract {
         creator: Address,
         amount: u32,
     ) -> Result<i128, ContractError> {
-        validate_buyback_amount(amount)?;
+        if amount == 0 {
+            return Ok(0);
+        }
 
         let Some(price) = resolve_quote_inputs(&env, &creator)? else {
             return Ok(0);
@@ -1885,10 +2282,8 @@ impl CreatorKeysContract {
         }
 
         let base_price = compute_buyback_base_price(price, amount)?;
-        let protocol_fee = compute_buyback_protocol_fee(&env, base_price)?;
-        base_price
-            .checked_add(protocol_fee)
-            .ok_or(ContractError::Overflow)
+        let config = read_required_protocol_fee_config(&env)?;
+        fee::compute_buyback_cost(base_price, config.protocol_bps).ok_or(ContractError::Overflow)
     }
 
     /// Read-only view: returns a quote for selling a key.
@@ -1901,14 +2296,30 @@ impl CreatorKeysContract {
         creator: Address,
         holder: Address,
     ) -> Result<QuoteResponse, ContractError> {
-        let Some(price) = resolve_quote_inputs(&env, &creator)? else {
+        let base_price: i128 = env
+            .storage()
+            .persistent()
+            .get(&constants::storage::KEY_PRICE)
+            .ok_or(ContractError::KeyPriceNotSet)?;
+
+        let Some(normalized) = normalize_quote_amount(base_price)? else {
             return Ok(zero_quote_response());
         };
 
-        let balance = Self::get_key_balance(env.clone(), creator, holder);
+        let balance = Self::get_key_balance(env.clone(), creator.clone(), holder);
         if balance == 0 {
             return Err(ContractError::InsufficientBalance);
         }
+
+        let profile = read_registered_creator_profile(&env, &creator)?;
+        let sell_supply = profile
+            .supply
+            .checked_sub(1)
+            .ok_or(ContractError::SellUnderflow)?;
+        let curve_price = compute_bonding_curve_price(&env, &creator, normalized, sell_supply)?;
+        let Some(price) = normalize_quote_amount(curve_price)? else {
+            return Ok(zero_quote_response());
+        };
 
         let (creator_fee, protocol_fee) = Self::compute_fees_for_payment(env.clone(), price)?;
         checked_format_quote_response(price, creator_fee, protocol_fee, false)
@@ -2002,6 +2413,53 @@ impl CreatorKeysContract {
         );
 
         Ok(claimable)
+    }
+
+    pub fn batch_claim_dividend(
+        env: Env,
+        creators: soroban_sdk::Vec<Address>,
+        holder: Address,
+    ) -> Result<soroban_sdk::Vec<ClaimResult>, ContractError> {
+        holder.require_auth();
+        assert_not_paused(&env)?;
+
+        if creators.len() > 20 {
+            return Err(ContractError::BatchClaimExceedsLimit);
+        }
+
+        let mut results = soroban_sdk::Vec::new(&env);
+
+        for creator in creators.iter() {
+            let claimable = compute_claimable_dividend(&env, &creator, &holder);
+
+            if claimable > 0 {
+                let accumulator = read_dividend_accumulator(&env, &creator);
+                env.storage().persistent().set(
+                    &constants::storage::holder_dividend_pending(&creator, &holder),
+                    &0i128,
+                );
+                env.storage().persistent().set(
+                    &constants::storage::holder_dividend_checkpoint(&creator, &holder),
+                    &accumulator,
+                );
+
+                env.events().publish(
+                    events::dividend_claimed_topics(&creator, &holder),
+                    events::DividendClaimedEvent {
+                        creator: creator.clone(),
+                        claimant: holder.clone(),
+                        amount: claimable,
+                    },
+                );
+            }
+
+            results.push_back(ClaimResult {
+                creator: creator.clone(),
+                amount_claimed: claimable,
+            });
+        }
+
+        Ok(results)
     }
 
     /// Read-only view: returns the total unclaimed dividend amount for `wallet` on `creator`.
@@ -2155,12 +2613,34 @@ impl CreatorKeysContract {
     }
 
     /// Read-only view: returns the max supply cap for a creator.
+    /// Read-only view: returns the max supply cap for a creator.
     ///
     /// Returns `None` if no max supply cap is set (uncapped).
     pub fn get_max_supply(env: Env, creator: Address) -> Option<u32> {
         env.storage()
             .persistent()
             .get(&constants::storage::max_supply(&creator))
+    }
+
+    /// Read-only view: returns the curve preset for a creator.
+    ///
+    /// # Errors
+    ///
+    /// - [`ContractError::NotRegistered`] if the creator is not registered.
+    pub fn get_curve_preset(env: Env, creator: Address) -> Result<CurvePreset, ContractError> {
+        if !env
+            .storage()
+            .persistent()
+            .has(&constants::storage::creator(&creator))
+        {
+            return Err(ContractError::NotRegistered);
+        }
+        let preset = env
+            .storage()
+            .persistent()
+            .get(&constants::storage::curve_preset(&creator))
+            .unwrap_or(CurvePreset::Flat);
+        Ok(preset)
     }
 
     /// Transfers key ownership between wallets without touching the bonding curve.
@@ -2266,8 +2746,64 @@ impl CreatorKeysContract {
 
         Ok(())
     }
-}
 
+    /// Returns the current withdrawable treasury balance.
+    ///
+    /// The treasury balance accumulates from the protocol fee portion of every
+    /// `buy_key` and `sell_key` operation. Returns `0` before any fees have accrued.
+    /// This method does not mutate contract state.
+    pub fn get_treasury_balance(env: Env) -> i128 {
+        read_treasury_balance(&env)
+    }
+
+    /// Withdraws `amount` from the protocol treasury to `recipient`.
+    ///
+    /// Only callable by the protocol admin (set via [`set_protocol_admin`]).
+    /// Reverts with:
+    /// - [`ContractError::Unauthorized`] if the caller is not the protocol admin.
+    /// - [`ContractError::NotPositiveAmount`] if `amount` is zero or negative.
+    /// - [`ContractError::InsufficientTreasuryBalance`] if `amount` exceeds the
+    ///   current treasury balance.
+    ///
+    /// On success, decrements the treasury balance and emits a
+    /// [`events::TreasuryWithdrawalEvent`].
+    /// Partial withdrawals are supported; full withdrawal leaves the balance at zero.
+    pub fn withdraw_treasury(
+        env: Env,
+        admin: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> Result<i128, ContractError> {
+        admin.require_auth();
+        assert_is_admin(&env, &admin)?;
+
+        if amount <= 0 {
+            return Err(ContractError::NotPositiveAmount);
+        }
+
+        let current = read_treasury_balance(&env);
+        if amount > current {
+            return Err(ContractError::InsufficientTreasuryBalance);
+        }
+
+        let remaining = current.checked_sub(amount).ok_or(ContractError::Overflow)?;
+        env.storage()
+            .persistent()
+            .set(&constants::storage::TREASURY_BALANCE, &remaining);
+
+        env.events().publish(
+            events::treasury_withdrawal_event_topics(&recipient),
+            events::TreasuryWithdrawalEvent {
+                amount,
+                recipient,
+                remaining_balance: remaining,
+                ledger: env.ledger().sequence(),
+            },
+        );
+
+        Ok(remaining)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::fee;
@@ -2682,4 +3218,4 @@ mod tests {
 }
 
 #[cfg(test)]
-mod test;
+mod test_issues;
