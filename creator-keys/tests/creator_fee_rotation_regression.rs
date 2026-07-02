@@ -3,6 +3,7 @@
 mod contract_test_env;
 
 use contract_test_env::{register_creator_keys, set_pricing_and_fees, test_env_with_auths};
+use creator_keys::RegisterCreatorParams;
 use soroban_sdk::{testutils::Address as _, Address, String};
 
 #[test]
@@ -13,8 +14,11 @@ fn test_creator_fee_recipient_rotation_regression() {
 
     let creator = Address::generate(&env);
     client.register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
+        &RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
         &None,
         &None,
         &None,
