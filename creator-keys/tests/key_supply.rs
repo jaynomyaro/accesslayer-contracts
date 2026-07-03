@@ -86,8 +86,12 @@ fn test_get_total_key_supply_increments_after_three_sequential_buys() {
     let buyer2 = Address::generate(&env);
     let buyer3 = Address::generate(&env);
     client.register_creator(
-        &creator,
-        &String::from_str(&env, "alice"),
+        &creator_keys::RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "alice"),
+        },
+        &None,
+        &None,
         &None,
         &None,
         &None,
