@@ -94,6 +94,13 @@ fn test_claim_dividend_event_topics_and_payload() {
 #[test]
 fn test_distribute_dividend_event_fields_individual_assertions() {
     let env = test_env_with_auths();
+
+    // Set ledger to a positive non-zero sequence before any contract setup so
+    // the contract instance TTL is fresh at this ledger and won't appear archived.
+    let mut ledger_info = env.ledger().get();
+    ledger_info.sequence_number = 12345;
+    env.ledger().set(ledger_info);
+
     let (client, _) = register_creator_keys(&env);
     // Set pricing and fees with 10% protocol fee
     set_pricing_and_fees(&env, &client, 100, 9000, 1000);
@@ -103,11 +110,6 @@ fn test_distribute_dividend_event_fields_individual_assertions() {
     // Distribute to a creator with a known supply (e.g. 2 keys bought)
     client.buy_key(&creator, &buyer, &100, &None);
     client.buy_key(&creator, &buyer, &100, &None);
-
-    // Set env ledger to a positive non-zero sequence
-    let mut ledger_info = env.ledger().get();
-    ledger_info.sequence_number = 12345;
-    env.ledger().set(ledger_info);
 
     let distributor = Address::generate(&env);
     let gross_amount = 20_000i128;
