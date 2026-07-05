@@ -8,7 +8,7 @@ mod contract_test_env;
 use contract_test_env::{
     register_creator_keys, set_curve_slope, set_pricing_and_fees, test_env_with_auths,
 };
-use creator_keys::CurvePreset;
+use creator_keys::{CurvePreset, RegisterCreatorParams};
 use soroban_sdk::{testutils::Address as _, Address, String};
 
 const KEY_PRICE: i128 = 1000;
@@ -91,11 +91,14 @@ fn test_quadratic_curve_symmetry() {
 
     let creator = Address::generate(&env);
     client.register_creator(
-        &creator,
-        &String::from_str(&env, "quadcreator"),
+        &RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: String::from_str(&env, "quadcreator"),
+        },
         &None,
         &None,
         &Some(CurvePreset::Quadratic),
+        &None,
         &None,
     );
 

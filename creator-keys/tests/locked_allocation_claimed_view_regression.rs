@@ -3,7 +3,7 @@
 mod contract_test_env;
 
 use contract_test_env::{register_creator_keys, test_env_with_auths};
-use creator_keys::LockedAllocation;
+use creator_keys::{LockedAllocation, RegisterCreatorParams};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, String};
 
@@ -22,13 +22,16 @@ fn test_get_locked_allocation_returns_claimed_true_after_claim() {
     env.ledger().set(ledger_info.clone());
 
     client.register_creator(
-        &creator,
-        &handle,
+        &RegisterCreatorParams {
+            creator: creator.clone(),
+            handle: handle.clone(),
+        },
         &Some(LockedAllocation {
             amount,
             unlock_ledger,
             claimed: false,
         }),
+        &None,
         &None,
         &None,
         &None,
