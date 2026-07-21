@@ -436,19 +436,30 @@ fn test_ttl_extended_event_emitted_after_buy() {
     fixture.buy_key(&buyer, KEY_PRICE);
 
     let events = env.events().all();
-    let last = events.last().unwrap();
+    let ttl_event = events
+        .iter()
+        .find(|(_, topics, _)| {
+            topics
+                .get(events::TOPIC_EVENT_NAME_INDEX)
+                .map(|value| {
+                    let sym: Symbol = value.into_val(&env);
+                    sym == events::TTL_EXTENDED_EVENT_NAME
+                })
+                .unwrap_or(false)
+        })
+        .expect("TTL extended event should be present");
 
-    let event_name: Symbol = last
+    let event_name: Symbol = ttl_event
         .1
         .get(events::TOPIC_EVENT_NAME_INDEX)
         .unwrap()
         .into_val(&env);
-    let event_creator: Address = last
+    let event_creator: Address = ttl_event
         .1
         .get(events::TOPIC_CREATOR_INDEX)
         .unwrap()
         .into_val(&env);
-    let payload: events::TtlExtendedEvent = last.2.into_val(&env);
+    let payload: events::TtlExtendedEvent = ttl_event.2.into_val(&env);
 
     assert_eq!(event_name, events::TTL_EXTENDED_EVENT_NAME);
     assert_eq!(event_creator, fixture.creator);
@@ -472,19 +483,30 @@ fn test_ttl_extended_event_emitted_after_sell() {
     fixture.sell_key(&seller);
 
     let events = env.events().all();
-    let last = events.last().unwrap();
+    let ttl_event = events
+        .iter()
+        .find(|(_, topics, _)| {
+            topics
+                .get(events::TOPIC_EVENT_NAME_INDEX)
+                .map(|value| {
+                    let sym: Symbol = value.into_val(&env);
+                    sym == events::TTL_EXTENDED_EVENT_NAME
+                })
+                .unwrap_or(false)
+        })
+        .expect("TTL extended event should be present");
 
-    let event_name: Symbol = last
+    let event_name: Symbol = ttl_event
         .1
         .get(events::TOPIC_EVENT_NAME_INDEX)
         .unwrap()
         .into_val(&env);
-    let event_creator: Address = last
+    let event_creator: Address = ttl_event
         .1
         .get(events::TOPIC_CREATOR_INDEX)
         .unwrap()
         .into_val(&env);
-    let payload: events::TtlExtendedEvent = last.2.into_val(&env);
+    let payload: events::TtlExtendedEvent = ttl_event.2.into_val(&env);
 
     assert_eq!(event_name, events::TTL_EXTENDED_EVENT_NAME);
     assert_eq!(event_creator, fixture.creator);
